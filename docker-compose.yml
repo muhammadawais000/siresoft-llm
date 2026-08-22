@@ -1,0 +1,94 @@
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-siresoft}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-siresoft}
+      POSTGRES_DB: ${POSTGRES_DB:-siresoft_rag}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-siresoft}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No `ports:` here on purpose -- only other containers on this
+    # compose network can reach Postgres. This is what avoids colliding
+    # with any native Postgres that might already be running on the host
+    # (exactly the port-5432 mixup that caused a real debugging session
+    # during development).
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  web:
+    build: .
+    restart: unless-stopped
+    command: ["gunicorn", "--workers", "3", "--worker-class", "gthread", "--threads", "4",
+              "--timeout", "120", "--bind", "0.0.0.0:8000", "config.wsgi:application"]
+    env_file: .env
+    environment:
+      # Inside the compose network, services are reached by name (`db`,
+      # `redis`), not localhost -- these override whatever's in .env.
+      DATABASE_URL: postgres://${POSTGRES_USER:-siresoft}:${POSTGRES_PASSWORD:-siresoft}@db:5432/${POSTGRES_DB:-siresoft_rag}
+      REDIS_URL: redis://redis:6379/0
+      # Ollama runs natively on the VM host, not in a container (see
+      # DOCKER_DEPLOYMENT.md for why) -- host-gateway is Docker's stable
+      # address for "the host machine", from inside any container.
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - static_volume:/app/staticfiles
+      - media_volume:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--concurrency=2"]
+    env_file: .env
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-siresoft}:${POSTGRES_PASSWORD:-siresoft}@db:5432/${POSTGRES_DB:-siresoft_rag}
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      - media_volume:/app/media
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  nginx:
+    image: nginx:stable-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - static_volume:/app/staticfiles:ro
+      - media_volume:/app/media:ro
+    depends_on:
+      - web
+
+volumes:
+  postgres_data:
+  redis_data:
+  static_volume:
+  media_volume:

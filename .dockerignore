@@ -1,0 +1,22 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+.env
+db.sqlite3
+media/
+staticfiles/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Build tools, not needed at container runtime -- static/css/app.css is
+# already compiled and committed.
+tools/
+static_src/
+
+# Deployment docs, irrelevant inside the image.
+*.md

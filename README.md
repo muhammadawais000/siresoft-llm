@@ -210,7 +210,19 @@ why its default is what it is. The ones most worth knowing about:
 
 ## Deployment
 
-See [DEPLOYMENT.md](DEPLOYMENT.md) for Gunicorn + systemd + nginx
-production deployment, including the Celery worker unit and the nginx
-settings SSE streaming actually needs (buffering *must* be off on that
-endpoint or the browser will see nothing until the response completes).
+Two options, both documented in full:
+
+- **[DOCKER_DEPLOYMENT.md](DOCKER_DEPLOYMENT.md)** — Docker Compose
+  (Postgres+pgvector, Redis, Django, Celery, nginx as containers; Ollama
+  native on the host). Recommended for most deployments: fewer moving
+  parts to hand-configure, and the whole stack is isolated from anything
+  else already running on the server.
+- **[DEPLOYMENT.md](DEPLOYMENT.md)** — Gunicorn + systemd + nginx, all
+  installed natively on the host. No Docker dependency at all; a
+  reasonable choice if you'd rather manage everything through systemd
+  directly, or the server can't run Docker.
+
+Both cover the one nginx setting that's easy to miss and silently breaks
+the chat feature: SSE response buffering *must* be off on the streaming
+endpoint, or the browser sees nothing until the whole answer has already
+finished generating.
