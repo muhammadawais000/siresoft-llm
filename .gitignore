@@ -1,0 +1,17 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+db.sqlite3
+media/
+staticfiles/
+*.log
+.DS_Store
+.idea/
+.vscode/
+
+# Tailwind's standalone CLI binary (~110MB) -- a build tool, not a
+# deliverable. Re-download via tools/get-tailwind.sh; compiled output
+# (static/css/app.css) IS committed since it's what actually ships.
+tools/

@@ -1,0 +1,365 @@
+{% extends "base.html" %}
+{% block content %}
+<div
+  x-data="app()"
+  x-init="init()"
+  @keydown.window="handleKeydown($event)"
+  class="flex h-full w-full flex-col"
+>
+  <!-- ===================== Top bar ===================== -->
+  <header class="flex h-14 shrink-0 items-center justify-between border-b border-border bg-surface px-4">
+    <div class="flex items-center gap-2">
+      <div class="flex h-7 w-7 items-center justify-center rounded-md bg-accent text-sm font-semibold text-white">S</div>
+      <span class="text-sm font-semibold">Siresoft RAG</span>
+    </div>
+
+    <div class="flex items-center gap-2">
+      <!-- New chat -->
+      <button type="button" class="btn-ghost" @click="newChat()" title="New chat (Ctrl/Cmd+Shift+O)">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+        New chat
+      </button>
+
+      <!-- History -->
+      <div class="relative">
+        <button type="button" class="btn-icon" @click="historyOpen = !historyOpen" title="Recent chats">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+        </button>
+        <div
+          x-show="historyOpen"
+          x-cloak
+          @click.outside="historyOpen = false"
+          x-transition
+          class="absolute right-0 z-20 mt-2 w-72 card animate-slide-up p-1 shadow-lg"
+        >
+          <p class="px-2 py-1.5 text-xs font-medium text-text-muted">Recent chats</p>
+          <template x-if="sessions.length === 0">
+            <p class="px-2 py-2 text-sm text-text-subtle">No chats yet.</p>
+          </template>
+          <button
+            type="button"
+            x-for="s in sessions"
+            :key="s.id"
+            @click="selectSession(s.id); historyOpen = false"
+            class="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover"
+            :class="s.id === currentSessionId ? 'bg-surface-hover text-accent' : 'text-text'"
+            x-text="s.title || 'Untitled chat'"
+          ></button>
+        </div>
+      </div>
+
+      <!-- Model dropdown -->
+      <div class="relative">
+        <button
+          type="button"
+          class="btn-ghost min-w-[9rem] justify-between"
+          @click="modelMenuOpen = !modelMenuOpen"
+        >
+          <span class="truncate" x-text="selectedModel || 'Select model'"></span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5 shrink-0"><path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+        </button>
+        <div
+          x-show="modelMenuOpen"
+          x-cloak
+          @click.outside="modelMenuOpen = false"
+          x-transition
+          class="absolute right-0 z-20 mt-2 w-72 card animate-slide-up p-1 shadow-lg"
+        >
+          <template x-if="models.length === 0">
+            <p class="px-2 py-2 text-sm text-text-subtle">Checking Ollama…</p>
+          </template>
+          <button
+            type="button"
+            x-for="m in models"
+            :key="m.name"
+            :disabled="!m.installed"
+            @click="selectedModel = m.name; modelMenuOpen = false"
+            class="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover disabled:hover:bg-transparent"
+            :class="m.name === selectedModel ? 'bg-surface-hover text-accent' : 'text-text'"
+          >
+            <span class="flex w-full items-center justify-between">
+              <span x-text="m.name"></span>
+              <span x-show="m.is_default" class="status-badge bg-accent-soft text-accent">default</span>
+            </span>
+            <span x-show="!m.installed" class="text-xs text-text-subtle">
+              Not installed — run <code class="font-mono">ollama pull <span x-text="m.name"></span></code>
+            </span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Sources panel toggle -->
+      <button type="button" class="btn-icon" @click="sourcesOpen = !sourcesOpen" title="Toggle sources panel">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M9 4.5v15m0-15h9.75A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 19.5H9m0-15H5.25A2.25 2.25 0 003 6.75v10.5A2.25 2.25 0 005.25 19.5H9" /></svg>
+      </button>
+
+      <!-- Theme toggle -->
+      <button type="button" class="btn-icon" @click="toggleTheme()" title="Toggle theme">
+        <svg x-show="!dark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 3v1.5m0 15V21m9-9h-1.5M4.5 12H3m15.36 6.36l-1.06-1.06M6.7 6.7 5.64 5.64m12.72 0-1.06 1.06M6.7 17.3l-1.06 1.06M16.5 12a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0z" /></svg>
+        <svg x-show="dark" x-cloak xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M21.752 15.002A9.72 9.72 0 0118 15.75c-5.385 0-9.75-4.365-9.75-9.75 0-1.33.266-2.597.748-3.752A9.753 9.753 0 003 11.25C3 16.635 7.365 21 12.75 21a9.753 9.753 0 008.998-5.998z" /></svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- ===================== Body: sidebar / chat / sources ===================== -->
+  <div class="flex min-h-0 flex-1">
+
+    <!-- ---------- Left sidebar: document library ---------- -->
+    <aside class="flex w-72 shrink-0 flex-col border-r border-border bg-surface">
+      <div class="flex items-center justify-between px-3 py-3">
+        <h2 class="text-sm font-semibold">Documents</h2>
+        <label class="btn-icon cursor-pointer" title="Upload files">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l-3 3m3-3l3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" /></svg>
+          <input type="file" class="hidden" multiple accept=".pdf,.txt,.md,.docx" @change="onFileInputChange($event)">
+        </label>
+      </div>
+
+      <div class="px-3 pb-2">
+        <input
+          id="doc-search"
+          type="search"
+          x-model="documentFilter"
+          placeholder="Search documents… (Ctrl/Cmd+K)"
+          class="input text-sm"
+        >
+      </div>
+
+      <!-- Drag-and-drop zone -->
+      <div
+        class="mx-3 mb-2 rounded-md border-2 border-dashed px-3 py-3 text-center text-xs transition-colors"
+        :class="dragActive ? 'border-accent bg-accent-soft text-accent' : 'border-border text-text-subtle'"
+        @dragover.prevent="dragActive = true"
+        @dragleave.prevent="dragActive = false"
+        @drop.prevent="onFileDrop($event)"
+      >
+        Drag files here, or click the <span class="font-medium">+</span> above
+        <div class="mt-0.5 text-text-subtle">PDF · TXT · MD · DOCX</div>
+      </div>
+
+      <!-- In-flight uploads -->
+      <div class="space-y-1.5 px-3" x-show="uploads.length > 0">
+        <template x-for="u in uploads" :key="u.id">
+          <div class="rounded-md border border-border bg-bg px-2 py-1.5">
+            <div class="flex items-center justify-between text-xs">
+              <span class="truncate" x-text="u.filename"></span>
+              <span class="text-text-subtle" x-text="u.progress + '%'"></span>
+            </div>
+            <div class="mt-1 h-1 overflow-hidden rounded-full bg-surface-hover">
+              <div class="h-full bg-accent transition-all" :style="`width: ${u.progress}%`"></div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Document list -->
+      <div class="min-h-0 flex-1 overflow-y-auto px-2 pb-3">
+        <!-- Loading skeleton -->
+        <template x-if="documentsLoading">
+          <div class="space-y-2 px-1 pt-1">
+            <div class="skeleton h-14"></div>
+            <div class="skeleton h-14"></div>
+            <div class="skeleton h-14"></div>
+          </div>
+        </template>
+
+        <!-- Empty state -->
+        <template x-if="!documentsLoading && filteredDocuments.length === 0 && documents.length === 0">
+          <div class="mt-6 px-3 text-center">
+            <p class="text-sm font-medium text-text-muted">No documents yet</p>
+            <p class="mt-1 text-xs text-text-subtle">Upload a PDF, DOCX, TXT, or Markdown file to get started.</p>
+          </div>
+        </template>
+
+        <template x-if="!documentsLoading && documents.length > 0 && filteredDocuments.length === 0">
+          <p class="mt-4 px-3 text-center text-xs text-text-subtle">No documents match "<span x-text="documentFilter"></span>".</p>
+        </template>
+
+        <template x-for="doc in filteredDocuments" :key="doc.id">
+          <div class="group mb-1.5 rounded-md border border-border bg-bg p-2.5">
+            <div class="flex items-start justify-between gap-2">
+              <p class="min-w-0 flex-1 truncate text-sm font-medium" :title="doc.title" x-text="doc.title"></p>
+              <div class="flex shrink-0 items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                <button
+                  type="button"
+                  class="btn-icon h-6 w-6"
+                  title="Re-index"
+                  x-show="doc.status === 'indexed' || doc.status === 'failed'"
+                  @click="reindexDocument(doc.id)"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+                </button>
+                <button type="button" class="btn-icon h-6 w-6" title="Delete" @click="deleteDocument(doc.id)">
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-3.5 w-3.5"><path stroke-linecap="round" stroke-linejoin="round" d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" /></svg>
+                </button>
+              </div>
+            </div>
+            <div class="mt-1.5 flex items-center gap-2">
+              <span class="status-badge" :class="statusMeta(doc.status).className">
+                <span class="h-1.5 w-1.5 rounded-full" :class="statusMeta(doc.status).dotClass"></span>
+                <span x-text="statusMeta(doc.status).label"></span>
+              </span>
+              <button
+                type="button"
+                x-show="doc.chunk_count > 0"
+                @click="toggleDocumentChunks(doc.id)"
+                class="flex items-center gap-0.5 text-xs text-text-subtle hover:text-accent"
+              >
+                <span x-text="doc.chunk_count + ' chunks'"></span>
+                <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     class="h-3 w-3 transition-transform" :class="expandedDocumentId === doc.id ? 'rotate-180' : ''">
+                  <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                </svg>
+              </button>
+            </div>
+            <p class="mt-1 truncate text-xs text-red-500" x-show="doc.status === 'failed'" :title="doc.error_message" x-text="doc.error_message"></p>
+
+            <!-- Expandable chunk list -->
+            <div x-show="expandedDocumentId === doc.id" x-collapse class="mt-2 space-y-1.5 border-t border-border pt-2">
+              <template x-if="chunksByDocument[doc.id]?.loading">
+                <div class="space-y-1">
+                  <div class="skeleton h-8"></div>
+                  <div class="skeleton h-8"></div>
+                </div>
+              </template>
+              <template x-if="chunksByDocument[doc.id]?.error">
+                <p class="text-xs text-red-500" x-text="chunksByDocument[doc.id].error"></p>
+              </template>
+              <template x-for="chunk in (chunksByDocument[doc.id]?.items || [])" :key="chunk.id">
+                <div class="rounded border border-border bg-surface p-1.5">
+                  <div class="flex items-center justify-between text-xs text-text-subtle">
+                    <span x-text="'Chunk ' + chunk.chunk_index" class="font-medium text-text"></span>
+                    <span x-show="chunk.page_number" x-text="'page ' + chunk.page_number"></span>
+                    <span x-show="!chunk.page_number && chunk.section_heading" class="truncate" x-text="chunk.section_heading"></span>
+                  </div>
+                  <p class="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap text-xs text-text-muted" x-text="chunk.content"></p>
+                  <p class="mt-1 text-xs text-text-subtle" x-text="chunk.token_count + ' tokens'"></p>
+                </div>
+              </template>
+            </div>
+          </div>
+        </template>
+      </div>
+    </aside>
+
+    <!-- ---------- Center: chat panel ---------- -->
+    <main class="flex min-w-0 flex-1 flex-col">
+      <div id="chat-scroll" class="min-h-0 flex-1 overflow-y-auto px-6 py-4" @click="onChatClick($event)">
+        <template x-if="messages.length === 0 && !messagesLoading">
+          <div class="flex h-full flex-col items-center justify-center text-center">
+            <div class="mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-accent-soft text-accent">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="h-6 w-6"><path stroke-linecap="round" stroke-linejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" /></svg>
+            </div>
+            <p class="text-sm font-medium text-text-muted">Ask a question about your documents</p>
+            <p class="mt-1 max-w-xs text-xs text-text-subtle">Answers are grounded strictly in what you've uploaded, with citations back to the source.</p>
+          </div>
+        </template>
+
+        <div class="mx-auto max-w-3xl space-y-4">
+          <template x-for="msg in messages" :key="msg.id">
+            <div class="flex" :class="msg.role === 'user' ? 'justify-end' : 'justify-start'">
+              <div
+                class="max-w-[85%] rounded-lg px-3.5 py-2.5 text-sm leading-relaxed"
+                :class="msg.role === 'user' ? 'bg-accent text-white' : 'card whitespace-pre-wrap'"
+              >
+                <template x-if="msg.role === 'user'">
+                  <span x-text="msg.content"></span>
+                </template>
+                <template x-if="msg.role === 'assistant'">
+                  <div>
+                    <span x-html="renderAnswer(msg)"></span>
+                    <span x-show="msg.streaming" class="ml-1 inline-flex gap-0.5 align-middle">
+                      <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-text-subtle" style="animation-delay: 0ms"></span>
+                      <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-text-subtle" style="animation-delay: 150ms"></span>
+                      <span class="h-1.5 w-1.5 animate-bounce rounded-full bg-text-subtle" style="animation-delay: 300ms"></span>
+                    </span>
+                    <div class="mt-1.5 flex items-center gap-2 text-xs text-text-subtle" x-show="msg.model_used">
+                      <span x-text="msg.model_used"></span>
+                      <span x-show="msg.latency_ms">· <span x-text="(msg.latency_ms / 1000).toFixed(1) + 's'"></span></span>
+                    </div>
+                  </div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <!-- Composer -->
+      <div class="border-t border-border bg-surface px-6 py-3">
+        <div class="mx-auto flex max-w-3xl items-end gap-2">
+          <textarea
+            id="composer"
+            x-model="composerText"
+            @keydown.enter.prevent="if (!$event.shiftKey) sendMessage()"
+            rows="1"
+            placeholder="Ask about your documents…"
+            class="input max-h-40 resize-none"
+            :disabled="streaming"
+          ></textarea>
+          <button type="button" class="btn-accent h-9 w-9 shrink-0 !px-0" :disabled="streaming || !composerText.trim()" @click="sendMessage()" title="Send (Enter)">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" /></svg>
+          </button>
+        </div>
+        <p class="mx-auto mt-1.5 max-w-3xl text-xs text-text-subtle">
+          <kbd class="rounded border border-border px-1">Enter</kbd> to send ·
+          <kbd class="rounded border border-border px-1">Shift+Enter</kbd> for a new line ·
+          <kbd class="rounded border border-border px-1">Ctrl/⌘+K</kbd> search docs ·
+          <kbd class="rounded border border-border px-1">Ctrl/⌘+Shift+O</kbd> new chat
+        </p>
+      </div>
+    </main>
+
+    <!-- ---------- Right panel: sources ---------- -->
+    <aside
+      x-show="sourcesOpen"
+      x-cloak
+      x-transition
+      class="flex w-80 shrink-0 flex-col border-l border-border bg-surface"
+    >
+      <div class="flex items-center justify-between px-3 py-3">
+        <h2 class="text-sm font-semibold">Sources</h2>
+        <button type="button" class="btn-icon" @click="sourcesOpen = false">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="h-4 w-4"><path stroke-linecap="round" stroke-linejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+        </button>
+      </div>
+
+      <div class="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
+        <template x-if="lastCitations.length === 0">
+          <p class="mt-4 text-center text-xs text-text-subtle">Sources for your next answer will appear here.</p>
+        </template>
+
+        <template x-for="c in lastCitations" :key="c.chunk_id">
+          <div
+            :id="'citation-' + c.rank"
+            class="card mb-2 p-2.5 transition-colors"
+            :class="highlightedRank === c.rank ? 'border-accent ring-1 ring-accent' : ''"
+          >
+            <div class="flex items-start justify-between gap-2">
+              <div class="min-w-0">
+                <p class="truncate text-xs font-semibold" x-text="'[' + c.rank + '] ' + c.document_title"></p>
+                <p class="text-xs text-text-subtle" x-show="c.page_number">Page <span x-text="c.page_number"></span></p>
+                <p class="truncate text-xs text-text-subtle" x-show="!c.page_number && c.section_heading" x-text="c.section_heading"></p>
+              </div>
+              <span class="shrink-0 text-xs font-medium text-accent" x-text="Math.round(c.score * 100) + '%'"></span>
+            </div>
+            <p class="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-text-muted" x-text="c.content"></p>
+          </div>
+        </template>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ===================== Toasts ===================== -->
+  <div class="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
+    <template x-for="t in toasts" :key="t.id">
+      <div
+        x-transition
+        class="animate-slide-up pointer-events-auto max-w-sm rounded-md border px-3 py-2 text-sm shadow-lg"
+        :class="t.type === 'error' ? 'border-red-200 bg-red-50 text-red-700 dark:border-red-900 dark:bg-red-950 dark:text-red-300' : 'border-border bg-surface text-text'"
+      >
+        <span x-text="t.message"></span>
+      </div>
+    </template>
+  </div>
+</div>
+{% endblock %}

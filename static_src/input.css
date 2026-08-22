@@ -1,0 +1,148 @@
+@import "tailwindcss";
+
+/* Class-based dark mode: toggled by adding/removing `.dark` on <html>,
+   not just prefers-color-scheme, so the in-app toggle can override the OS
+   setting and persist via localStorage (see app.js). */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@font-face {
+  font-family: "Inter";
+  src: url("../fonts/inter-var.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Semantic surface/text/border tokens that actually flip between light and
+   dark, defined as plain custom properties (not static @theme values) so
+   the same utility classes (bg-surface, text-text, ...) resolve differently
+   under .dark without duplicating every component's markup. */
+:root {
+  --color-bg: #ffffff;
+  --color-surface: #f8fafc;
+  --color-surface-hover: #f1f5f9;
+  --color-border: #e2e8f0;
+  --color-text: #0f172a;
+  --color-text-muted: #64748b;
+  --color-text-subtle: #94a3b8;
+}
+
+.dark {
+  --color-bg: #0b0e14;
+  --color-surface: #12161f;
+  --color-surface-hover: #1a202c;
+  --color-border: #232838;
+  --color-text: #e5e7eb;
+  --color-text-muted: #9aa3b2;
+  --color-text-subtle: #5b6472;
+}
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+
+  --color-bg: var(--color-bg);
+  --color-surface: var(--color-surface);
+  --color-surface-hover: var(--color-surface-hover);
+  --color-border: var(--color-border);
+  --color-text: var(--color-text);
+  --color-text-muted: var(--color-text-muted);
+  --color-text-subtle: var(--color-text-subtle);
+
+  /* Single accent colour, per the brief — used for the send button,
+     active states, links, and focus rings; nowhere else. */
+  --color-accent: #2563eb;
+  --color-accent-hover: #1d4ed8;
+  --color-accent-soft: #eff6ff;
+
+  --animate-fade-in: fade-in 150ms ease-out;
+  --animate-slide-up: slide-up 200ms ease-out;
+}
+
+.dark {
+  --color-accent-soft: color-mix(in srgb, var(--color-accent) 18%, transparent);
+}
+
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes slide-up {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@layer base {
+  body {
+    font-family: var(--font-sans);
+  }
+
+  /* Alpine's x-cloak does nothing on its own -- without this rule,
+     elements using it (dropdowns, the sources panel, theme-swapped icons)
+     flash visible for a moment before Alpine boots and evaluates x-show. */
+  [x-cloak] {
+    display: none !important;
+  }
+
+  /* Thin, unobtrusive scrollbars that still respect the theme. */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--color-border) transparent;
+  }
+}
+
+@layer components {
+  /* Tailwind v4 only lets @apply reference real utilities, not other
+     custom component classes, so the shared "btn" utility list is
+     repeated in each variant rather than chained via `@apply btn`. */
+  .btn-accent {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+           bg-accent text-white hover:bg-accent-hover;
+  }
+  .btn-ghost {
+    @apply inline-flex items-center justify-center gap-1.5 rounded-md px-3 py-1.5 text-sm font-medium
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed
+           text-text hover:bg-surface-hover;
+  }
+  .btn-icon {
+    @apply inline-flex items-center justify-center h-8 w-8 rounded-md text-text-muted
+           hover:bg-surface-hover hover:text-text transition-colors disabled:opacity-40;
+  }
+
+  .input {
+    @apply w-full rounded-md border border-border bg-bg px-3 py-2 text-sm text-text placeholder:text-text-subtle
+           focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-shadow;
+  }
+
+  .card {
+    @apply rounded-lg border border-border bg-surface;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded bg-surface-hover;
+  }
+
+  /* Injected via x-html into assistant messages (see app.js renderAnswer),
+     so it's plain CSS rather than a Tailwind @apply of arbitrary utilities
+     that wouldn't be picked up by content scanning on dynamically-built
+     class strings. */
+  .citation-chip {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.75em;
+    font-weight: 600;
+    color: var(--color-accent);
+    padding: 0 0.15em;
+    cursor: pointer;
+    border-radius: 0.25em;
+  }
+  .citation-chip:hover {
+    background: var(--color-accent-soft);
+    text-decoration: underline;
+  }
+}

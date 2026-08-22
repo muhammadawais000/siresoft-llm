@@ -1,0 +1,29 @@
+{% load static %}<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Siresoft RAG{% endblock %}</title>
+
+  <!-- Applied before first paint to avoid a light->dark flash on load. -->
+  <script>
+    (function () {
+      var stored = localStorage.getItem('siresoft-theme');
+      var dark = stored ? stored === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
+      if (dark) document.documentElement.classList.add('dark');
+    })();
+  </script>
+
+  <link rel="preload" href="{% static 'fonts/inter-var.woff2' %}" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  {% block extra_head %}{% endblock %}
+</head>
+<body class="h-screen w-screen overflow-hidden bg-bg text-text antialiased">
+  {% block content %}{% endblock %}
+  <!-- app.js registers Alpine.data(...) on 'alpine:init', so it must run
+       before alpine.min.js bootstraps -- both deferred scripts execute in
+       document order, so this ordering (not download order) is what matters. -->
+  <script defer src="{% static 'js/app.js' %}"></script>
+  <script defer src="{% static 'js/vendor/alpine.min.js' %}"></script>
+</body>
+</html>
