@@ -36,15 +36,15 @@
           <template x-if="sessions.length === 0">
             <p class="px-2 py-2 text-sm text-text-subtle">No chats yet.</p>
           </template>
-          <button
-            type="button"
-            x-for="s in sessions"
-            :key="s.id"
-            @click="selectSession(s.id); historyOpen = false"
-            class="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover"
-            :class="s.id === currentSessionId ? 'bg-surface-hover text-accent' : 'text-text'"
-            x-text="s.title || 'Untitled chat'"
-          ></button>
+          <template x-for="s in sessions" :key="s.id">
+            <button
+              type="button"
+              @click="selectSession(s.id); historyOpen = false"
+              class="block w-full truncate rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover"
+              :class="s.id === currentSessionId ? 'bg-surface-hover text-accent' : 'text-text'"
+              x-text="s.title || 'Untitled chat'"
+            ></button>
+          </template>
         </div>
       </div>
 
@@ -68,23 +68,23 @@
           <template x-if="models.length === 0">
             <p class="px-2 py-2 text-sm text-text-subtle">Checking Ollama…</p>
           </template>
-          <button
-            type="button"
-            x-for="m in models"
-            :key="m.name"
-            :disabled="!m.installed"
-            @click="selectedModel = m.name; modelMenuOpen = false"
-            class="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover disabled:hover:bg-transparent"
-            :class="m.name === selectedModel ? 'bg-surface-hover text-accent' : 'text-text'"
-          >
-            <span class="flex w-full items-center justify-between">
-              <span x-text="m.name"></span>
-              <span x-show="m.is_default" class="status-badge bg-accent-soft text-accent">default</span>
-            </span>
-            <span x-show="!m.installed" class="text-xs text-text-subtle">
-              Not installed — run <code class="font-mono">ollama pull <span x-text="m.name"></span></code>
-            </span>
-          </button>
+          <template x-for="m in models" :key="m.name">
+            <button
+              type="button"
+              :disabled="!m.installed"
+              @click="selectedModel = m.name; modelMenuOpen = false"
+              class="flex w-full flex-col items-start rounded-md px-2 py-1.5 text-left text-sm hover:bg-surface-hover disabled:hover:bg-transparent"
+              :class="m.name === selectedModel ? 'bg-surface-hover text-accent' : 'text-text'"
+            >
+              <span class="flex w-full items-center justify-between">
+                <span x-text="m.name"></span>
+                <span x-show="m.is_default" class="status-badge bg-accent-soft text-accent">default</span>
+              </span>
+              <span x-show="!m.installed" class="text-xs text-text-subtle">
+                Not installed — run <code class="font-mono">ollama pull <span x-text="m.name"></span></code>
+              </span>
+            </button>
+          </template>
         </div>
       </div>
 
