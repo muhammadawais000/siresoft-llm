@@ -36,9 +36,11 @@ def fake_embed_chunks(chunk_dicts):
 
 
 class IngestDocumentTaskTests(TestCase):
+    @patch("rag.indexing.upsert_chunks")
+    @patch("rag.indexing.delete_by_document")
     @patch("documents.tasks.embed_chunks", side_effect=fake_embed_chunks)
     @patch("documents.tasks.load_document")
-    def test_successful_ingestion_marks_document_indexed(self, mock_load, mock_embed):
+    def test_successful_ingestion_marks_document_indexed(self, mock_load, mock_embed, mock_delete, mock_upsert):
         doc = make_document()
         mock_load.return_value = [LCDocument(page_content="Some real content to chunk.", metadata={"page_number": None})]
 
@@ -79,13 +81,14 @@ class IngestDocumentTaskTests(TestCase):
         # actually running -- this must log and return, not crash the worker.
         ingest_document(999999)
 
+    @patch("rag.indexing.upsert_chunks")
+    @patch("rag.indexing.delete_by_document")
     @patch("documents.tasks.embed_chunks", side_effect=fake_embed_chunks)
     @patch("documents.tasks.load_document")
-    def test_reindex_replaces_existing_chunks_rather_than_appending(self, mock_load, mock_embed):
+    def test_reindex_replaces_existing_chunks_rather_than_appending(self, mock_load, mock_embed, mock_delete, mock_upsert):
         doc = make_document(status=Document.Status.INDEXED)
         Chunk.objects.create(
             document=doc, content="stale chunk from a previous version", chunk_index=0,
-            embedding=[0.0] * settings.EMBEDDING_DIMENSIONS,
         )
         mock_load.return_value = [LCDocument(page_content="Brand new content entirely.", metadata={"page_number": None})]
 

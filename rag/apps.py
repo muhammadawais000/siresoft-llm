@@ -25,8 +25,10 @@ class RagConfig(AppConfig):
         def _warm_models(**kwargs):
             from rag.embeddings import get_embedding_model
             from rag.reranker import get_reranker
+            from rag.vector_store import ensure_collection
 
             get_embedding_model()
             get_reranker()
+            ensure_collection()
 
         worker_process_init.connect(_warm_models, weak=False)

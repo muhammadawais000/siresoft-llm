@@ -207,6 +207,18 @@ RERANKER_MODEL = env("RERANKER_MODEL", default="BAAI/bge-reranker-base")
 EMBEDDING_BATCH_SIZE = env.int("EMBEDDING_BATCH_SIZE", default=32)
 
 # --------------------------------------------------------------------------
+# Vector store — Qdrant holds every chunk's embedding for dense/cosine
+# search; PostgreSQL keeps the relational data + full-text (tsvector)
+# index only. QDRANT_COLLECTION's vector size is tied to
+# EMBEDDING_DIMENSIONS at creation time (see rag.vector_store.ensure_collection)
+# -- exactly like the old pgvector HNSW index, switching EMBEDDING_PROFILE
+# requires a fresh collection and a full re-index, not just a config change.
+# --------------------------------------------------------------------------
+
+QDRANT_URL = env("QDRANT_URL", default="http://localhost:6333")
+QDRANT_COLLECTION = env("QDRANT_COLLECTION", default="siresoft_chunks")
+
+# --------------------------------------------------------------------------
 # Chunking — configurable, not buried inside a function.
 # --------------------------------------------------------------------------
 

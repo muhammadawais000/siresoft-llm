@@ -30,6 +30,21 @@ services:
       timeout: 5s
       retries: 10
 
+  qdrant:
+    image: qdrant/qdrant:v1.11.3
+    restart: unless-stopped
+    volumes:
+      - qdrant_data:/qdrant/storage
+    healthcheck:
+      # The image has no curl/wget -- bash's /dev/tcp is what's actually
+      # available to probe the port without adding a package.
+      test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/127.0.0.1/6333' || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    # No `ports:` here either -- only web/worker (on the compose network)
+    # ever talk to Qdrant, same reasoning as `db` above.
+
   web:
     build: .
     restart: unless-stopped
@@ -41,6 +56,7 @@ services:
       # `redis`), not localhost -- these override whatever's in .env.
       DATABASE_URL: postgres://${POSTGRES_USER:-siresoft}:${POSTGRES_PASSWORD:-siresoft}@db:5432/${POSTGRES_DB:-siresoft_rag}
       REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
       # Ollama runs natively on the VM host, not in a container (see
       # DOCKER_DEPLOYMENT.md for why) -- host-gateway is Docker's stable
       # address for "the host machine", from inside any container.
@@ -55,6 +71,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      qdrant:
+        condition: service_healthy
 
   worker:
     build: .
@@ -64,6 +82,7 @@ services:
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-siresoft}:${POSTGRES_PASSWORD:-siresoft}@db:5432/${POSTGRES_DB:-siresoft_rag}
       REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
       OLLAMA_BASE_URL: http://host.docker.internal:11434
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -73,6 +92,8 @@ services:
       db:
         condition: service_healthy
       redis:
+        condition: service_healthy
+      qdrant:
         condition: service_healthy
 
   nginx:
@@ -90,5 +111,6 @@ services:
 volumes:
   postgres_data:
   redis_data:
+  qdrant_data:
   static_volume:
   media_volume:

@@ -169,11 +169,11 @@ class Command(BaseCommand):
         self.stdout.write(summary)
 
     def _dense_only_baseline(self, query: str, top_n: int) -> list[tuple[str, float]]:
-        from pgvector.django import CosineDistance
+        from rag.vector_store import search_with_scores
 
-        vector = embed_query(query)
-        qs = Chunk.objects.annotate(distance=CosineDistance("embedding", vector)).order_by("distance")[:top_n]
-        return [(c.content, 1 - c.distance) for c in qs]
+        scored = search_with_scores(embed_query(query), limit=top_n)
+        chunks_by_id = {c.id: c for c in Chunk.objects.filter(id__in=[cid for cid, _ in scored])}
+        return [(chunks_by_id[cid].content, score) for cid, score in scored if cid in chunks_by_id]
 
     def _hybrid_prerank(self, query: str, top_n: int) -> list[tuple[str, float]]:
         dense_ids = dense_search(embed_query(query), pool_size=20)
