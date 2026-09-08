@@ -9,6 +9,7 @@ in rag/tests/.
 import uuid
 from unittest.mock import patch
 
+from django.conf import settings
 from django.test import SimpleTestCase, TestCase
 
 from chat.models import ChatMessage, ChatSession, MessageCitation
@@ -27,7 +28,7 @@ def make_chunk(content="content"):
         sha256=uuid.uuid4().hex + uuid.uuid4().hex,
         status=Document.Status.INDEXED,
     )
-    return Chunk.objects.create(document=doc, content=content, chunk_index=0)
+    return Chunk.objects.create(document=doc, content=content, chunk_index=0, embedding=[0.0] * settings.EMBEDDING_DIMENSIONS)
 
 
 class StreamChatTurnTests(TestCase):

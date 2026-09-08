@@ -1,13 +1,9 @@
 # Docker Deployment (VM / server)
 
-This deploys the whole stack — Postgres, Redis, Qdrant, Django (Gunicorn),
+This deploys the whole stack — Postgres+pgvector, Redis, Django (Gunicorn),
 Celery worker, nginx — as Docker containers, with **Ollama running natively
 on the VM** (not containerized — see "Why Ollama stays outside Docker"
 below).
-
-Postgres holds relational data and the full-text (keyword) index; Qdrant is
-the dedicated vector store for chunk embeddings/dense search — the two are
-separate containers/services, not the same database.
 
 Everything here runs **detached** (`-d`) with `restart: unless-stopped`.
 That combination means: closing your SSH session does **not** stop the
@@ -119,7 +115,7 @@ docker compose up -d --build
 ```
 
 This builds the app image (Django + Celery share one image, per the
-`Dockerfile`), then starts `db`, `redis`, and `qdrant` first, waits for their
+`Dockerfile`), then starts `db` and `redis` first, waits for their
 healthchecks to pass, then starts `web`, `worker`, and `nginx`. Migrations
 and static file collection run automatically on every container start
 (`docker/entrypoint.sh`) — you don't run `manage.py migrate` by hand.
@@ -183,16 +179,8 @@ docker compose logs -f web       # Django/Gunicorn
 docker compose logs -f worker    # Celery ingestion pipeline
 docker compose logs -f nginx
 docker compose logs -f db
-docker compose logs -f qdrant
 journalctl -u ollama -f          # Ollama runs outside Compose, so its logs are separate
 ```
-
-If ingestion or chat fails with a Qdrant connection error, confirm the
-`qdrant` service is healthy (`docker compose ps`) and that `web`/`worker`
-are reaching it at `http://qdrant:6333` (the compose-network address, set
-automatically in `docker-compose.yml` — you don't need `QDRANT_URL` in
-`.env` at all for the containerized deployment, only for running
-`manage.py` outside Docker).
 
 If `web` or `worker` can't reach Ollama, the usual cause is
 `host.docker.internal` not resolving — confirm `extra_hosts:

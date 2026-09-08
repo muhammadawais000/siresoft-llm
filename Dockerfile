@@ -12,16 +12,16 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Dependencies installed before the app code is copied in, so this layer
-# only rebuilds when requirements.txt actually changes -- not on every
-# code edit.
-COPY requirements.txt .
-# torch must come from the CPU-only wheel index, installed *before* the
-# rest of requirements.txt. Without this, pip resolves plain `torch>=2.2`
-# (as listed in requirements.txt) to the default CUDA build -- pulling in
-# several hundred MB to multiple GB of nvidia-* packages that a CPU-only
-# server will never use, massively slowing the build for no benefit. This
-# mirrors how torch was installed during local development (see README).
+# torch installed *before* requirements.txt is even copied in, on its own
+# layer that only depends on this exact instruction -- not on
+# requirements.txt's content. torch is by far the heaviest, slowest
+# download in the whole build, so keeping its layer cache valid across
+# unrelated requirements.txt edits (a version bump, adding/removing some
+# other package) avoids re-downloading it on every such change. It must
+# come from the CPU-only wheel index: plain `torch>=2.2` resolves to the
+# default CUDA build, pulling in several hundred MB to multiple GB of
+# nvidia-* packages a CPU-only server will never use. This mirrors how
+# torch was installed during local development (see README).
 #
 # --extra-index-url (not --index-url): the latter *replaces* PyPI
 # entirely rather than adding to it, which breaks the very next step --
@@ -29,6 +29,11 @@ COPY requirements.txt .
 # typing_extensions from source) on an index that only hosts torch wheels.
 RUN pip install --no-cache-dir --default-timeout=180 --retries 5 \
     torch --extra-index-url https://download.pytorch.org/whl/cpu
+
+# Everything else installed after, on its own layer keyed to
+# requirements.txt's content -- only rebuilds when requirements.txt
+# actually changes, not on every code edit.
+COPY requirements.txt .
 RUN pip install --no-cache-dir --default-timeout=180 --retries 5 -r requirements.txt
 
 COPY . .

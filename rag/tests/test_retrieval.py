@@ -1,13 +1,13 @@
 """Retrieval scoring tests.
 
-RRF fusion is pure logic (SimpleTestCase, no DB). sparse_search exercises
-real Postgres full-text search against a live test database. dense_search
-is a thin pass-through to rag.vector_store.search (Qdrant) -- covered by
-DenseSearchTests mocking that module boundary, the same way retrieve()
-mocks embed_query / the cross-encoder, so tests stay fast, offline, and
-don't require a running Qdrant instance. What's under test there is this
-codebase's own orchestration (fusion, candidate pooling, threshold
-filtering), not Qdrant's or the models' own correctness.
+RRF fusion is pure logic (SimpleTestCase, no DB). dense_search/sparse_search
+exercise real pgvector cosine search and Postgres full-text search against
+a live test database with hand-crafted embeddings, so the SQL-level scoring
+is verified for real rather than mocked. retrieve() itself mocks the ML
+model boundary (embed_query / the cross-encoder) so tests stay fast and
+don't require downloading multi-hundred-MB models -- what's under test
+there is the surrounding orchestration (fusion, candidate pooling,
+threshold filtering), not the models themselves.
 """
 
 import uuid
@@ -45,13 +45,11 @@ def make_document(title="Doc"):
     )
 
 
-def make_chunk(document, content, embedding=None, chunk_index=0, page_number=None):
-    # `embedding` is accepted (and ignored) for call-site compatibility --
-    # vectors live in Qdrant now, not on the Chunk row -- so existing
-    # callers that pass a hand-crafted vector don't all need editing.
+def make_chunk(document, content, embedding, chunk_index=0, page_number=None):
     return Chunk.objects.create(
         document=document,
         content=content,
+        embedding=embedding,
         chunk_index=chunk_index,
         page_number=page_number,
     )
@@ -78,20 +76,27 @@ class ReciprocalRankFusionTests(SimpleTestCase):
         self.assertGreater(both[2], only_one[2])
 
 
-class DenseSearchTests(SimpleTestCase):
-    """dense_search is a thin pass-through to rag.vector_store.search
-    (Qdrant) -- mocked at that boundary rather than requiring a live
-    Qdrant instance for what's really just an argument-forwarding check.
-    """
+class DenseSearchTests(TestCase):
+    def setUp(self):
+        self.doc = make_document()
+        self.chunk_a = make_chunk(self.doc, "alpha content", unit_vector(0), chunk_index=0)
+        self.chunk_b = make_chunk(self.doc, "beta content", unit_vector(1), chunk_index=1)
+        self.chunk_c = make_chunk(self.doc, "gamma content", unit_vector(2), chunk_index=2)
 
-    @patch("rag.retrieval.vector_search")
-    def test_forwards_query_vector_pool_size_and_document_ids_and_returns_result(self, mock_search):
-        mock_search.return_value = [3, 1, 2]
+    def test_identical_vector_is_ranked_first(self):
+        results = dense_search(unit_vector(0), pool_size=10)
+        self.assertEqual(results[0], self.chunk_a.id)
 
-        results = dense_search([0.1, 0.2], pool_size=10, document_ids=[7])
+    def test_pool_size_limits_result_count(self):
+        results = dense_search(unit_vector(0), pool_size=2)
+        self.assertEqual(len(results), 2)
 
-        mock_search.assert_called_once_with([0.1, 0.2], limit=10, document_ids=[7])
-        self.assertEqual(results, [3, 1, 2])
+    def test_document_ids_filter_excludes_other_documents(self):
+        other_doc = make_document("Other")
+        other_chunk = make_chunk(other_doc, "delta content", unit_vector(0), chunk_index=0)
+        results = dense_search(unit_vector(0), pool_size=10, document_ids=[self.doc.id])
+        self.assertNotIn(other_chunk.id, results)
+        self.assertIn(self.chunk_a.id, results)
 
 
 class SparseSearchTests(TestCase):
@@ -117,10 +122,7 @@ class SparseSearchTests(TestCase):
 
 class RetrieveOrchestrationTests(TestCase):
     """Exercises retrieve()'s own logic (fusion -> rerank -> threshold),
-    with embed_query, the cross-encoder, and dense_search (Qdrant) all
-    mocked at their module boundaries -- sparse_search is the one real
-    call, against a live test-database full-text index, since that part
-    doesn't need an external service.
+    with embed_query and the cross-encoder mocked at the module boundary.
     """
 
     def setUp(self):
@@ -128,56 +130,48 @@ class RetrieveOrchestrationTests(TestCase):
         self.relevant = make_chunk(self.doc, "Error E-4471 calibration fault", unit_vector(0), chunk_index=0)
         self.irrelevant = make_chunk(self.doc, "Completely unrelated text", unit_vector(5), chunk_index=1)
 
-    @patch("rag.retrieval.dense_search")
     @patch("rag.retrieval.cross_encoder_rerank")
     @patch("rag.retrieval.embed_query")
-    def test_relevant_chunk_returned_above_threshold(self, mock_embed_query, mock_rerank, mock_dense_search):
+    def test_relevant_chunk_returned_above_threshold(self, mock_embed_query, mock_rerank):
         mock_embed_query.return_value = unit_vector(0)
-        mock_dense_search.return_value = [self.relevant.id, self.irrelevant.id]
         mock_rerank.side_effect = lambda query, passages: [0.9 for _ in passages]
 
         results = retrieve("what does E-4471 mean", top_k=5, similarity_threshold=0.01)
 
         self.assertTrue(any(r.chunk.id == self.relevant.id for r in results))
 
-    @patch("rag.retrieval.dense_search")
     @patch("rag.retrieval.cross_encoder_rerank")
     @patch("rag.retrieval.embed_query")
-    def test_nothing_returned_when_all_scores_are_near_zero(self, mock_embed_query, mock_rerank, mock_dense_search):
+    def test_nothing_returned_when_all_scores_are_near_zero(self, mock_embed_query, mock_rerank):
         # Empirically (see manage.py prove_retrieval, and rag.reranker's
         # docstring), the reranker's calibrated Sigmoid probability sits
         # well under 0.01 for genuinely irrelevant content and 0.7+ for
         # confident real matches -- a wide, well-separated range once
         # CrossEncoder's already-applied Sigmoid isn't double-applied.
         mock_embed_query.return_value = unit_vector(0)
-        mock_dense_search.return_value = [self.relevant.id, self.irrelevant.id]
         mock_rerank.side_effect = lambda query, passages: [0.0005 for _ in passages]
 
         results = retrieve("irrelevant question", top_k=5, similarity_threshold=0.01)
 
         self.assertEqual(results, [])
 
-    @patch("rag.retrieval.dense_search")
     @patch("rag.retrieval.cross_encoder_rerank")
     @patch("rag.retrieval.embed_query")
-    def test_top_k_limits_result_count(self, mock_embed_query, mock_rerank, mock_dense_search):
+    def test_top_k_limits_result_count(self, mock_embed_query, mock_rerank):
         for i in range(2, 8):
             make_chunk(self.doc, f"content {i}", unit_vector(i), chunk_index=i)
         mock_embed_query.return_value = unit_vector(0)
-        mock_dense_search.return_value = list(Chunk.objects.values_list("id", flat=True))
         mock_rerank.side_effect = lambda query, passages: [0.9 for _ in passages]
 
         results = retrieve("query", top_k=3, similarity_threshold=0.0)
 
         self.assertLessEqual(len(results), 3)
 
-    @patch("rag.retrieval.dense_search")
     @patch("rag.retrieval.cross_encoder_rerank")
     @patch("rag.retrieval.embed_query")
-    def test_no_chunks_in_db_returns_empty_without_calling_rerank(self, mock_embed_query, mock_rerank, mock_dense_search):
+    def test_no_chunks_in_db_returns_empty_without_calling_rerank(self, mock_embed_query, mock_rerank):
         Chunk.objects.all().delete()
         mock_embed_query.return_value = unit_vector(0)
-        mock_dense_search.return_value = []
 
         results = retrieve("anything", top_k=5)
 

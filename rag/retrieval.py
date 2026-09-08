@@ -1,4 +1,4 @@
-"""Hybrid retrieval: dense (Qdrant cosine) + sparse (Postgres full-text),
+"""Hybrid retrieval: dense (pgvector cosine) + sparse (Postgres full-text),
 fused with Reciprocal Rank Fusion, then re-ranked with a cross-encoder.
 
 This is the whole point of "genuinely good" retrieval per the project
@@ -17,7 +17,6 @@ from django.contrib.postgres.search import SearchQuery, SearchRank
 from rag.embeddings import embed_query
 from rag.models import Chunk
 from rag.reranker import rerank as cross_encoder_rerank
-from rag.vector_store import search as vector_search
 
 logger = logging.getLogger(__name__)
 
@@ -66,7 +65,13 @@ def get_all_chunks(document_ids: list[int] | None = None) -> list[RetrievedChunk
 
 
 def dense_search(query_vector: list[float], pool_size: int, document_ids=None) -> list[int]:
-    return vector_search(query_vector, limit=pool_size, document_ids=document_ids)
+    from pgvector.django import CosineDistance
+
+    qs = Chunk.objects.all()
+    if document_ids:
+        qs = qs.filter(document_id__in=document_ids)
+    qs = qs.annotate(distance=CosineDistance("embedding", query_vector)).order_by("distance")
+    return list(qs.values_list("id", flat=True)[:pool_size])
 
 
 def sparse_search(query_text: str, pool_size: int, document_ids=None) -> list[int]:

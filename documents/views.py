@@ -161,9 +161,6 @@ class DocumentViewSet(
     def perform_destroy(self, instance):
         if instance.file:
             instance.file.delete(save=False)
-        # Chunk rows (Postgres cascade) and their Qdrant vectors
-        # (documents.signals.delete_document_vectors, a pre_delete signal)
-        # are both cleaned up as a side effect of this single call.
         instance.delete()
 
     @action(detail=True, methods=["post"])
