@@ -10,7 +10,11 @@ psycopg[binary]>=3.1
 pgvector>=0.3          # historical migration 0001 still imports pgvector.django -- Chunk itself no longer uses it
 
 # --- Vector store (dedicated, containerized) ---
-qdrant-client>=1.9
+# Pinned to stay within one minor version of the qdrant/qdrant server
+# image tag in docker-compose.yml -- qdrant-client warns/can break when
+# the gap is wider, so bump both together, not just whichever resolves
+# newest on a fresh `pip install`.
+qdrant-client>=1.11,<1.13
 
 # --- Background jobs ---
 celery>=5.4

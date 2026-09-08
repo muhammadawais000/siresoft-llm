@@ -91,6 +91,17 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
     else:
         results = retrieve(rewritten_query, document_ids=document_ids)
         answer_prompt = ANSWER_PROMPT
+        if not results and document_ids:
+            # The cross-encoder is calibrated against prose passages; a
+            # short document like a resume (name/contact block, bullet
+            # lists) can score every chunk below the relevance threshold
+            # for an extractive query ("what's the name") even when the
+            # right chunk is right there. For a small enough scoped
+            # document, falling back to full-document context costs
+            # little and avoids a false "nothing found".
+            fallback_chunks = get_all_chunks(document_ids=document_ids)
+            if fallback_chunks and len(fallback_chunks) <= settings.RETRIEVAL_TOP_K:
+                results = fallback_chunks
 
     if not results:
         latency_ms = int((time.monotonic() - start) * 1000)
