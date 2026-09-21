@@ -14,12 +14,14 @@ class EmailAuthenticationForm(AuthenticationForm):
 
     username = forms.EmailField(
         label="Email",
-        widget=forms.EmailInput(attrs={"class": "input", "autofocus": True, "placeholder": "you@company.com"}),
+        widget=forms.EmailInput(
+            attrs={"class": "login-input", "autofocus": True, "placeholder": "you@company.com"}
+        ),
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["password"].widget.attrs.update({"class": "input", "placeholder": "••••••••"})
+        self.fields["password"].widget.attrs.update({"class": "login-input", "placeholder": "••••••••"})
 
     def get_invalid_login_error(self):
         # Deliberately the same message for "no such account", "wrong

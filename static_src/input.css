@@ -146,14 +146,13 @@
     text-decoration: underline;
   }
 
-  /* Login page header. Plain CSS (gradient + dot pattern) standing in for
-     a real brand photo -- swap in a background-image: url(...) here once
-     one exists, everything else on the page is unaffected. */
-  .login-header {
-    background-image:
-      radial-gradient(circle at 15% 25%, rgb(255 255 255 / 12%) 1.5px, transparent 1.5px),
-      radial-gradient(circle at 80% 60%, rgb(255 255 255 / 10%) 1.5px, transparent 1.5px),
-      linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%);
-    background-size: 42px 42px, 56px 56px, 100% 100%;
+  /* Login form fields: deliberately distinct from the app-wide `.input`
+     (which is rounded, filled, and used throughout the main SPA) -- the
+     login page asks for a transparent, sharp-cornered, thin-blue-border
+     look specific to this one screen. */
+  .login-input {
+    @apply w-full rounded-none border border-accent/50 bg-transparent px-3 py-2.5 text-sm text-text
+           placeholder:text-text-subtle focus:outline-none focus:border-accent focus:ring-1
+           focus:ring-accent/30 transition-colors;
   }
 }

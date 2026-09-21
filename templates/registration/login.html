@@ -4,25 +4,36 @@
 {% block content %}
 <div class="flex h-full w-full flex-col">
   <header
-    class="login-header relative flex h-40 shrink-0 items-center justify-center overflow-hidden bg-cover bg-center sm:h-48"
-    style="background-image: url('{% static 'img/login-bg.jpg' %}');"
+    class="relative flex h-1/2 shrink-0 items-center justify-center overflow-hidden bg-center"
+    style="background-image: url('{% static 'img/login-bg.jpg' %}'),
+           radial-gradient(circle at 15% 25%, rgb(255 255 255 / 12%) 1.5px, transparent 1.5px),
+           radial-gradient(circle at 80% 60%, rgb(255 255 255 / 10%) 1.5px, transparent 1.5px),
+           linear-gradient(135deg, #1e3a8a 0%, #1e40af 50%, #2563eb 100%);
+           background-size: cover, 42px 42px, 56px 56px, 100% 100%;"
   >
-    <!-- Dark overlay so white text stays readable regardless of the
-         photo's own colors -- .login-header alone (gradient) is the
-         fallback look if the image file is ever missing/renamed. -->
+    <!-- Dark overlay keeps the white heading readable regardless of the
+         photo's own colors; if the photo file is missing/renamed, the
+         gradient + dot-pattern layers behind it show through instead
+         (browsers fall back to the next background-image layer when one
+         fails to load), so this header is never left blank. -->
     <div class="absolute inset-0 bg-black/40"></div>
-    <h1 class="relative text-2xl font-semibold text-white sm:text-3xl">Login Siresoft LLM</h1>
+    <h1 class="relative text-2xl font-semibold text-white sm:text-4xl">Login Siresoft LLM</h1>
   </header>
 
   <div class="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
-    <div class="card w-full max-w-sm p-6">
+    <div class="w-full max-w-sm bg-transparent">
+      <div class="mb-6 text-center">
+        <h2 class="text-lg font-semibold text-text">Welcome back</h2>
+        <p class="mt-1 text-sm text-text-muted">Sign in to continue to Siresoft RAG.</p>
+      </div>
+
       {% if form.errors %}
       <div class="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
         {{ form.non_field_errors.0|default:"Invalid email or password." }}
       </div>
       {% endif %}
 
-      <form method="post" class="space-y-4" novalidate>
+      <form method="post" class="space-y-5" novalidate>
         {% csrf_token %}
         <div>
           <label for="{{ form.username.id_for_label }}" class="mb-1.5 block text-sm font-medium text-text">Email</label>
