@@ -1,8 +1,16 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Login · Siresoft RAG{% endblock %}
 {% block content %}
 <div class="flex h-full w-full flex-col">
-  <header class="login-header relative flex h-40 shrink-0 items-center justify-center overflow-hidden sm:h-48">
+  <header
+    class="login-header relative flex h-40 shrink-0 items-center justify-center overflow-hidden bg-cover bg-center sm:h-48"
+    style="background-image: url('{% static 'img/login-bg.jpg' %}');"
+  >
+    <!-- Dark overlay so white text stays readable regardless of the
+         photo's own colors -- .login-header alone (gradient) is the
+         fallback look if the image file is ever missing/renamed. -->
+    <div class="absolute inset-0 bg-black/40"></div>
     <h1 class="relative text-2xl font-semibold text-white sm:text-3xl">Login Siresoft LLM</h1>
   </header>
 
