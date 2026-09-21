@@ -1,3 +1,14 @@
+// DRF's SessionAuthentication enforces CSRF on unsafe methods once a
+// request is session-authenticated -- every POST/PUT/DELETE fetch below
+// needs this header. IndexView is decorated with @ensure_csrf_cookie
+// specifically so this cookie always exists for the SPA to read, since
+// none of these calls go through a server-rendered <form> that would
+// otherwise set it.
+function getCookie(name) {
+  const match = document.cookie.match('(^|;\\s*)' + name + '=([^;]*)');
+  return match ? decodeURIComponent(match[2]) : null;
+}
+
 document.addEventListener('alpine:init', () => {
   Alpine.data('app', () => ({
     // ---------------------------------------------------------------
@@ -136,6 +147,7 @@ document.addEventListener('alpine:init', () => {
 
       const xhr = new XMLHttpRequest();
       xhr.open('POST', '/api/documents/upload/files/');
+      xhr.setRequestHeader('X-CSRFToken', getCookie('csrftoken'));
 
       xhr.upload.onprogress = (e) => {
         if (e.lengthComputable) entry.progress = Math.round((e.loaded / e.total) * 100);
@@ -173,7 +185,10 @@ document.addEventListener('alpine:init', () => {
     async deleteDocument(id) {
       if (!window.confirm('Delete this document? This cannot be undone.')) return;
       try {
-        const resp = await fetch(`/api/documents/${id}/`, { method: 'DELETE' });
+        const resp = await fetch(`/api/documents/${id}/`, {
+          method: 'DELETE',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        });
         if (!resp.ok) throw new Error('request failed');
         this.documents = this.documents.filter((d) => d.id !== id);
       } catch (err) {
@@ -183,7 +198,10 @@ document.addEventListener('alpine:init', () => {
 
     async reindexDocument(id) {
       try {
-        const resp = await fetch(`/api/documents/${id}/reindex/`, { method: 'POST' });
+        const resp = await fetch(`/api/documents/${id}/reindex/`, {
+          method: 'POST',
+          headers: { 'X-CSRFToken': getCookie('csrftoken') },
+        });
         if (!resp.ok) throw new Error('request failed');
         const updated = await resp.json();
         const idx = this.documents.findIndex((d) => d.id === id);
@@ -291,7 +309,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const resp = await fetch('/api/chat/sessions/', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
           body: JSON.stringify({}),
         });
         if (!resp.ok) throw new Error('request failed');
@@ -379,7 +397,7 @@ document.addEventListener('alpine:init', () => {
       try {
         const resp = await fetch(`/api/chat/sessions/${this.currentSessionId}/messages/`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-CSRFToken': getCookie('csrftoken') },
           body: JSON.stringify({ question, model: this.selectedModel }),
         });
 

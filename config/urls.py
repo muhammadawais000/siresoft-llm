@@ -6,13 +6,16 @@ is driven client-side against the DRF/SSE API below.
 """
 
 from django.contrib import admin
+from django.contrib.auth.views import LogoutView
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import IndexView
+from core.views import IndexView, SiresoftLoginView
 
 urlpatterns = [
     path("", IndexView.as_view(), name="index"),
+    path("login/", SiresoftLoginView.as_view(), name="login"),
+    path("logout/", LogoutView.as_view(), name="logout"),
     path("admin/", admin.site.urls),
     path("api/documents/", include("documents.urls")),
     path("api/rag/", include("rag.urls")),

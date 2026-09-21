@@ -53,9 +53,24 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
+    # Needs request.user, so must come after AuthenticationMiddleware.
+    "core.middleware.RequireActiveLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
+
+# No signup: every account is created by an admin (Django admin's stock
+# "Add user" form). EmailBackend lets the login page collect an email
+# instead of a username; ModelBackend stays as a fallback so Django
+# admin's own (username-based) login form keeps working unchanged.
+AUTHENTICATION_BACKENDS = [
+    "core.auth_backends.EmailBackend",
+    "django.contrib.auth.backends.ModelBackend",
+]
+
+LOGIN_URL = "/login/"
+LOGIN_REDIRECT_URL = "/"
+LOGOUT_REDIRECT_URL = "/login/"
 
 ROOT_URLCONF = "config.urls"
 
@@ -128,6 +143,17 @@ REST_FRAMEWORK = {
     "PAGE_SIZE": 20,
     "DEFAULT_RENDERER_CLASSES": [
         "rest_framework.renderers.JSONRenderer",
+    ],
+    # Belt-and-suspenders alongside RequireActiveLoginMiddleware (which
+    # already blocks any unauthenticated/inactive request before it
+    # reaches a view) -- this is what makes the API correctly reject
+    # requests on its own terms too, not just because the middleware
+    # happened to run first.
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "rest_framework.permissions.IsAuthenticated",
     ],
 }
 

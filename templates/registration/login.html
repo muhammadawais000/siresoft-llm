@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% block title %}Login · Siresoft RAG{% endblock %}
+{% block content %}
+<div class="flex h-full w-full flex-col">
+  <header class="login-header relative flex h-40 shrink-0 items-center justify-center overflow-hidden sm:h-48">
+    <h1 class="relative text-2xl font-semibold text-white sm:text-3xl">Login Siresoft LLM</h1>
+  </header>
+
+  <div class="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
+    <div class="card w-full max-w-sm p-6">
+      {% if form.errors %}
+      <div class="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700 dark:bg-red-950 dark:text-red-300">
+        {{ form.non_field_errors.0|default:"Invalid email or password." }}
+      </div>
+      {% endif %}
+
+      <form method="post" class="space-y-4" novalidate>
+        {% csrf_token %}
+        <div>
+          <label for="{{ form.username.id_for_label }}" class="mb-1.5 block text-sm font-medium text-text">Email</label>
+          {{ form.username }}
+        </div>
+        <div>
+          <label for="{{ form.password.id_for_label }}" class="mb-1.5 block text-sm font-medium text-text">Password</label>
+          {{ form.password }}
+        </div>
+        <input type="hidden" name="next" value="{{ next }}">
+        <button type="submit" class="btn-accent w-full">Log in</button>
+      </form>
+    </div>
+  </div>
+</div>
+{% endblock %}
