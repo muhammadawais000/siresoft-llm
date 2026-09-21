@@ -26,6 +26,11 @@ environ.Env.read_env(BASE_DIR / ".env")
 SECRET_KEY = env("DJANGO_SECRET_KEY", default="django-insecure-dev-only-change-me")
 DEBUG = env.bool("DJANGO_DEBUG", default=False)
 ALLOWED_HOSTS = env.list("DJANGO_ALLOWED_HOSTS", default=["localhost", "127.0.0.1"])
+# Required whenever the app is reached over HTTPS through a domain (e.g. a
+# reverse proxy/tunnel in front of nginx) -- Django's CSRF middleware
+# checks the Origin header on every unsafe HTTPS request against this
+# list, separately from ALLOWED_HOSTS. Entries need the scheme (https://).
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=[])
 
 INSTALLED_APPS = [
     "django.contrib.admin",
