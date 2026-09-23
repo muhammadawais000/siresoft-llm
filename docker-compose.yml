@@ -30,6 +30,17 @@ services:
       timeout: 5s
       retries: 10
 
+  searxng:
+    image: searxng/searxng:latest
+    restart: unless-stopped
+    volumes:
+      - ./docker/searxng/settings.yml:/etc/searxng/settings.yml:ro
+    # No `ports:` here on purpose, same reasoning as `db`/`redis` -- only
+    # web/worker (on this compose network) can reach it. web_search()
+    # already treats SearXNG being unreachable as "no web results" rather
+    # than an error, so there's no health-gated startup dependency needed
+    # here the way db/redis have.
+
   web:
     build: .
     restart: unless-stopped
@@ -45,6 +56,7 @@ services:
       # DOCKER_DEPLOYMENT.md for why) -- host-gateway is Docker's stable
       # address for "the host machine", from inside any container.
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      SEARXNG_URL: http://searxng:8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -55,6 +67,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      searxng:
+        condition: service_started
 
   worker:
     build: .
@@ -65,6 +79,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-siresoft}:${POSTGRES_PASSWORD:-siresoft}@db:5432/${POSTGRES_DB:-siresoft_rag}
       REDIS_URL: redis://redis:6379/0
       OLLAMA_BASE_URL: http://host.docker.internal:11434
+      SEARXNG_URL: http://searxng:8080
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
@@ -74,6 +89,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      searxng:
+        condition: service_started
 
   nginx:
     image: nginx:stable-alpine

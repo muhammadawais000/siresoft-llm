@@ -1,0 +1,19 @@
+# Minimal SearXNG config for this project's internal use only -- no public
+# port is exposed (see docker-compose.yml), only the web/worker containers
+# on the compose network can reach it. `formats: json` is the one setting
+# that matters here: SearXNG serves HTML-only by default, and rag/web_search.py
+# needs the JSON API.
+use_default_settings: true
+
+general:
+  instance_name: "siresoft-searxng"
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "e54cf2161ee5c2be36071f58d0e05ac9e4278ce48862937391f906706134261b"
+  limiter: false
+  image_proxy: false

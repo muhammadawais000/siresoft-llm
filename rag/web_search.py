@@ -1,15 +1,15 @@
 """Web search fallback: only called when document retrieval finds nothing
-relevant. Wraps the `duckduckgo-search` library so the rest of the app
-never talks to it directly -- if the provider changes later (SearXNG,
-Tavily), only this file needs to change.
+relevant. Talks to a self-hosted SearXNG instance (see docker-compose.yml
+and docker/searxng/settings.yml) over its JSON API -- no third-party
+search API key/account/cost, consistent with every other component in
+this stack (Ollama, embeddings, reranker) running fully locally.
 """
 
 import logging
 from dataclasses import dataclass
 
+import requests
 from django.conf import settings
-from duckduckgo_search import DDGS
-from duckduckgo_search.exceptions import DuckDuckGoSearchException
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,10 @@ class WebResult:
     snippet: str
 
     def to_citation(self, rank: int) -> dict:
+        # Shaped to match RetrievedChunk.to_citation()'s keys where they
+        # overlap (rank, content, score) so the frontend can render either
+        # kind of citation without a separate code path -- chunk_id/
+        # document_id are always None here since a web result has no chunk.
         return {
             "rank": rank,
             "chunk_id": None,
@@ -33,25 +37,34 @@ class WebResult:
 
 
 def web_search(query: str, max_results: int | None = None) -> list[WebResult]:
-    """Best-effort search. Returns [] on any failure, or when the feature
-    is disabled -- callers treat that exactly like retrieve() returning
-    no chunks (i.e. fall through to the existing NO_CONTEXT_MESSAGE).
+    """Best-effort search against the self-hosted SearXNG instance.
+
+    Returns [] on any failure (SearXNG down, network error, malformed
+    response) or when the feature is disabled -- callers treat that
+    exactly like retrieve() returning no chunks, i.e. fall through to the
+    existing NO_CONTEXT_MESSAGE rather than raising.
     """
     if not settings.WEB_SEARCH_ENABLED:
         return []
 
     max_results = max_results or settings.WEB_SEARCH_MAX_RESULTS
     try:
-        raw_results = DDGS().text(query, max_results=max_results)
-    except DuckDuckGoSearchException:
-        logger.exception("web_search: DuckDuckGo request failed for query=%r", query)
+        resp = requests.get(
+            f"{settings.SEARXNG_URL}/search",
+            params={"q": query, "format": "json"},
+            timeout=settings.WEB_SEARCH_TIMEOUT,
+        )
+        resp.raise_for_status()
+        raw_results = resp.json().get("results", [])
+    except requests.RequestException:
+        logger.exception("web_search: SearXNG request failed for query=%r", query)
         return []
-    except Exception:
-        logger.exception("web_search: unexpected error for query=%r", query)
+    except ValueError:
+        logger.exception("web_search: SearXNG returned non-JSON response for query=%r", query)
         return []
 
     return [
-        WebResult(title=r.get("title", ""), url=r.get("href", ""), snippet=r.get("body", ""))
-        for r in raw_results
-        if r.get("href")
+        WebResult(title=r.get("title", ""), url=r.get("url", ""), snippet=r.get("content", ""))
+        for r in raw_results[:max_results]
+        if r.get("url")
     ]

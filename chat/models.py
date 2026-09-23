@@ -57,16 +57,25 @@ class ChatMessage(TimeStampedModel):
 
 
 class MessageCitation(models.Model):
-    """Links an assistant ChatMessage to the chunks its answer was grounded
-    in, with the retrieval/rerank score preserved for the UI's sources
-    panel. A through-table (rather than a JSON blob on ChatMessage) so
-    citations stay queryable and cascade-delete cleanly with their chunk.
+    """Links an assistant ChatMessage to what its answer was grounded in --
+    either a document chunk, or (when document retrieval found nothing and
+    the answer came from rag.web_search instead) a web result. Exactly one
+    of `chunk` / `source_url` is set per row, never both.
+
+    A through-table (rather than a JSON blob on ChatMessage) so citations
+    stay queryable and cascade-delete cleanly with their chunk.
     """
 
     message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name="citations")
-    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, related_name="citations")
-    rank = models.IntegerField()
-    score = models.FloatField()
+    chunk = models.ForeignKey(
+        Chunk, on_delete=models.CASCADE, related_name="citations", null=True, blank=True
+    )
+    source_url = models.URLField(blank=True)
+    source_title = models.CharField(max_length=255, blank=True)
+    rank = models.PositiveIntegerField()
+    # Null for web citations -- a search-engine result has no cross-encoder
+    # relevance score the way a retrieved chunk does.
+    score = models.FloatField(null=True, blank=True)
 
     class Meta:
         ordering = ["rank"]
@@ -78,11 +87,3 @@ class MessageCitation(models.Model):
 
     def __str__(self):
         return f"citation #{self.rank} for message {self.message_id}"
-
-class MessageCitation(models.Model):
-    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name="citations")
-    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, null=True, blank=True)  # <- null=True naya
-    source_url = models.URLField(null=True, blank=True)      # <- naya
-    source_title = models.CharField(max_length=255, null=True, blank=True)  # <- naya
-    rank = models.PositiveIntegerField()
-    score = models.FloatField(null=True, blank=True)  # <- already tha, ab null bhi allow karna hai (web citations ke liye)

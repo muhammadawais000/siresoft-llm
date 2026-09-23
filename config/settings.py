@@ -116,8 +116,17 @@ AUTH_PASSWORD_VALIDATORS = [
     {"NAME": "django.contrib.auth.password_validation.NumericPasswordValidator"},
 ]
 
+# --------------------------------------------------------------------------
+# Web search fallback -- only used when document retrieval finds nothing
+# relevant (see chat.services.stream_chat_turn). Backed by a self-hosted
+# SearXNG instance (docker-compose.yml), not a paid third-party search API
+# -- consistent with every other component in this stack (Ollama,
+# embeddings, reranker) running locally with no external account/key.
+# --------------------------------------------------------------------------
 WEB_SEARCH_ENABLED = env.bool("WEB_SEARCH_ENABLED", default=False)
 WEB_SEARCH_MAX_RESULTS = env.int("WEB_SEARCH_MAX_RESULTS", default=5)
+WEB_SEARCH_TIMEOUT = env.int("WEB_SEARCH_TIMEOUT", default=5)
+SEARXNG_URL = env("SEARXNG_URL", default="http://searxng:8080")
 
 LANGUAGE_CODE = "en-us"
 TIME_ZONE = "UTC"

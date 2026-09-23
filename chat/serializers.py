@@ -5,14 +5,17 @@ from .models import ChatMessage, ChatSession, MessageCitation
 
 class MessageCitationSerializer(serializers.ModelSerializer):
     # Field names here intentionally match RetrievedChunk.to_citation()'s
-    # SSE payload shape, so the frontend can render a citation the same way
-    # whether it just streamed in or was loaded from chat history.
-    chunk_id = serializers.IntegerField(source="chunk_id", read_only=True)
-    document_id = serializers.IntegerField(source="chunk.document_id", read_only=True)
-    document_title = serializers.CharField(source="chunk.document.title", read_only=True)
-    page_number = serializers.IntegerField(source="chunk.page_number", read_only=True)
-    section_heading = serializers.CharField(source="chunk.section_heading", read_only=True)
-    content = serializers.CharField(source="chunk.content", read_only=True)
+    # (and WebResult.to_citation()'s) SSE payload shape, so the frontend
+    # renders a citation the same way whether it just streamed in or was
+    # loaded from chat history -- and the same way regardless of whether
+    # it's a document chunk or a web result (chunk is null for the
+    # latter, see chat.models.MessageCitation).
+    chunk_id = serializers.IntegerField(read_only=True)
+    document_id = serializers.SerializerMethodField()
+    document_title = serializers.SerializerMethodField()
+    page_number = serializers.SerializerMethodField()
+    section_heading = serializers.SerializerMethodField()
+    content = serializers.SerializerMethodField()
 
     class Meta:
         model = MessageCitation
@@ -25,8 +28,24 @@ class MessageCitationSerializer(serializers.ModelSerializer):
             "page_number",
             "section_heading",
             "content",
+            "source_url",
         ]
         read_only_fields = fields
+
+    def get_document_id(self, obj):
+        return obj.chunk.document_id if obj.chunk_id else None
+
+    def get_document_title(self, obj):
+        return obj.chunk.document.title if obj.chunk_id else obj.source_title
+
+    def get_page_number(self, obj):
+        return obj.chunk.page_number if obj.chunk_id else None
+
+    def get_section_heading(self, obj):
+        return obj.chunk.section_heading if obj.chunk_id else ""
+
+    def get_content(self, obj):
+        return obj.chunk.content if obj.chunk_id else ""
 
 
 class ChatMessageSerializer(serializers.ModelSerializer):

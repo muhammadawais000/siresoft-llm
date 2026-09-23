@@ -340,7 +340,7 @@
           <p class="mt-4 text-center text-xs text-text-subtle">Sources for your next answer will appear here.</p>
         </template>
 
-        <template x-for="c in lastCitations" :key="c.chunk_id">
+        <template x-for="c in lastCitations" :key="c.rank">
           <div
             :id="'citation-' + c.rank"
             class="card mb-2 p-2.5 transition-colors"
@@ -351,8 +351,17 @@
                 <p class="truncate text-xs font-semibold" x-text="'[' + c.rank + '] ' + c.document_title"></p>
                 <p class="text-xs text-text-subtle" x-show="c.page_number">Page <span x-text="c.page_number"></span></p>
                 <p class="truncate text-xs text-text-subtle" x-show="!c.page_number && c.section_heading" x-text="c.section_heading"></p>
+                <a
+                  x-show="c.source_url"
+                  :href="c.source_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="truncate text-xs text-accent hover:underline"
+                  x-text="c.source_url"
+                ></a>
               </div>
-              <span class="shrink-0 text-xs font-medium text-accent" x-text="Math.round(c.score * 100) + '%'"></span>
+              <span x-show="c.score !== null && c.score !== undefined" class="shrink-0 text-xs font-medium text-accent" x-text="Math.round(c.score * 100) + '%'"></span>
+              <span x-show="c.score === null || c.score === undefined" class="status-badge shrink-0 bg-accent-soft text-accent">Web</span>
             </div>
             <p class="mt-1.5 max-h-40 overflow-y-auto whitespace-pre-wrap text-xs text-text-muted" x-text="c.content"></p>
           </div>

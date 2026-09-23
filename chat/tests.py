@@ -19,6 +19,8 @@ from documents.models import Document
 from rag.models import Chunk
 from rag.retrieval import RetrievedChunk
 from rag.retrieval import get_all_chunks as real_get_all_chunks
+from rag.web_search import WebResult
+from chat.serializers import MessageCitationSerializer
 
 
 def make_chunk(content="content"):
@@ -50,7 +52,14 @@ class StreamChatTurnTests(TestCase):
     @patch("chat.services.condense_question", side_effect=lambda llm, q, h: q)
     @patch("chat.services.get_llm")
     def test_no_relevant_context_short_circuits_without_calling_generation(self, mock_get_llm, mock_condense, mock_installed):
-        with patch("chat.services.retrieve", return_value=[]), patch("chat.services.stream_answer") as mock_stream_answer:
+        # web_search is mocked here too (even though WEB_SEARCH_ENABLED
+        # defaults to False) so this test's outcome never depends on
+        # whichever value happens to be set in the environment it runs
+        # in -- see WebSearchFallbackTests for the dedicated web-search
+        # behavior tests.
+        with patch("chat.services.retrieve", return_value=[]), patch(
+            "chat.services.web_search", return_value=[]
+        ), patch("chat.services.stream_answer") as mock_stream_answer:
             events = list(stream_chat_turn(self.session, "irrelevant question", "llama3.1:8b"))
             mock_stream_answer.assert_not_called()
 
@@ -95,7 +104,9 @@ class StreamChatTurnTests(TestCase):
     @patch("chat.services.condense_question", side_effect=lambda llm, q, h: q)
     @patch("chat.services.get_llm")
     def test_first_message_sets_a_blank_sessions_title(self, mock_get_llm, mock_condense, mock_installed):
-        with patch("chat.services.retrieve", return_value=[]), patch("chat.services.stream_answer", return_value=iter([])):
+        with patch("chat.services.retrieve", return_value=[]), patch(
+            "chat.services.web_search", return_value=[]
+        ), patch("chat.services.stream_answer", return_value=iter([])):
             list(stream_chat_turn(self.session, "What is the return policy?", "llama3.1:8b"))
 
         self.session.refresh_from_db()
@@ -108,7 +119,9 @@ class StreamChatTurnTests(TestCase):
         self.session.title = "Original title"
         self.session.save()
 
-        with patch("chat.services.retrieve", return_value=[]), patch("chat.services.stream_answer", return_value=iter([])):
+        with patch("chat.services.retrieve", return_value=[]), patch(
+            "chat.services.web_search", return_value=[]
+        ), patch("chat.services.stream_answer", return_value=iter([])):
             list(stream_chat_turn(self.session, "A completely different question", "llama3.1:8b"))
 
         self.session.refresh_from_db()
@@ -127,10 +140,121 @@ class StreamChatTurnTests(TestCase):
 
         with patch("chat.services.condense_question", side_effect=fake_condense), patch(
             "chat.services.get_llm"
-        ), patch("chat.services.retrieve", return_value=[]), patch("chat.services.stream_answer", return_value=iter([])):
+        ), patch("chat.services.retrieve", return_value=[]), patch(
+            "chat.services.web_search", return_value=[]
+        ), patch("chat.services.stream_answer", return_value=iter([])):
             list(stream_chat_turn(self.session, "a follow-up", "llama3.1:8b"))
 
         self.assertEqual(captured["history"], [("human", "first question"), ("ai", "first answer")])
+
+
+class WebSearchFallbackTests(TestCase):
+    """stream_chat_turn()'s last-resort path: when neither retrieve() nor
+    the small-corpus fallback finds anything, rag.web_search.web_search()
+    is tried before giving up with NO_CONTEXT_MESSAGE. web_search() and
+    stream_web_answer() are mocked at the chat.services boundary --
+    rag/tests/test_web_search.py covers web_search()'s own SearXNG
+    integration.
+    """
+
+    def setUp(self):
+        self.session = ChatSession.objects.create()
+
+    @patch("chat.services.get_installed_models", return_value={"llama3.1:8b"})
+    @patch("chat.services.condense_question", side_effect=lambda llm, q, h: q)
+    @patch("chat.services.get_llm")
+    def test_falls_back_to_web_search_when_nothing_found_in_documents(
+        self, mock_get_llm, mock_condense, mock_installed
+    ):
+        web_result = WebResult(title="Example", url="https://example.com", snippet="An example snippet.")
+
+        with patch("chat.services.retrieve", return_value=[]), patch(
+            "chat.services.get_all_chunks", return_value=[]
+        ), patch("chat.services.web_search", return_value=[web_result]), patch(
+            "chat.services.stream_web_answer", return_value=iter(["Based on the web, ", "the answer is X."])
+        ) as mock_stream_web:
+            events = list(stream_chat_turn(self.session, "something not in any document", "llama3.1:8b"))
+
+        mock_stream_web.assert_called_once()
+        done_event = next(e for e in events if e["event"] == "done")
+        self.assertEqual(done_event["data"]["source"], "web")
+        self.assertEqual(len(done_event["data"]["citations"]), 1)
+        self.assertEqual(done_event["data"]["citations"][0]["source_url"], "https://example.com")
+        self.assertIsNone(done_event["data"]["citations"][0]["chunk_id"])
+
+        citation = MessageCitation.objects.get()
+        self.assertIsNone(citation.chunk)
+        self.assertEqual(citation.source_url, "https://example.com")
+        self.assertEqual(citation.source_title, "Example")
+        self.assertIsNone(citation.score)
+
+        assistant = ChatMessage.objects.get(role=ChatMessage.Role.ASSISTANT)
+        self.assertEqual(assistant.content, "Based on the web, the answer is X.")
+
+    @patch("chat.services.get_installed_models", return_value={"llama3.1:8b"})
+    @patch("chat.services.condense_question", side_effect=lambda llm, q, h: q)
+    @patch("chat.services.get_llm")
+    def test_falls_through_to_no_context_message_when_web_search_also_empty(
+        self, mock_get_llm, mock_condense, mock_installed
+    ):
+        with patch("chat.services.retrieve", return_value=[]), patch(
+            "chat.services.get_all_chunks", return_value=[]
+        ), patch("chat.services.web_search", return_value=[]), patch(
+            "chat.services.stream_web_answer"
+        ) as mock_stream_web:
+            events = list(stream_chat_turn(self.session, "nothing anywhere", "llama3.1:8b"))
+
+        mock_stream_web.assert_not_called()
+        done_event = next(e for e in events if e["event"] == "done")
+        self.assertEqual(done_event["data"]["citations"], [])
+        assistant = ChatMessage.objects.get(role=ChatMessage.Role.ASSISTANT)
+        self.assertEqual(assistant.content, NO_CONTEXT_MESSAGE)
+
+
+class MessageCitationSerializerTests(TestCase):
+    """A web citation has chunk=None -- MessageCitationSerializer must not
+    try to dereference chunk.document_id/.content/etc on it (that used to
+    raise AttributeError: 'NoneType' object has no attribute '...' the
+    moment a session with a web-sourced answer was reloaded from history).
+    """
+
+    def setUp(self):
+        self.session = ChatSession.objects.create()
+        self.message = ChatMessage.objects.create(
+            session=self.session, role=ChatMessage.Role.ASSISTANT, content="answer"
+        )
+
+    def test_web_citation_serializes_without_a_chunk(self):
+        citation = MessageCitation.objects.create(
+            message=self.message,
+            chunk=None,
+            source_url="https://example.com",
+            source_title="Example Page",
+            rank=1,
+            score=None,
+        )
+
+        data = MessageCitationSerializer(citation).data
+
+        self.assertIsNone(data["chunk_id"])
+        self.assertIsNone(data["document_id"])
+        self.assertEqual(data["document_title"], "Example Page")
+        self.assertIsNone(data["page_number"])
+        self.assertEqual(data["section_heading"], "")
+        self.assertEqual(data["content"], "")
+        self.assertEqual(data["source_url"], "https://example.com")
+
+    def test_chunk_citation_still_serializes_as_before(self):
+        chunk = make_chunk("some content")
+        citation = MessageCitation.objects.create(message=self.message, chunk=chunk, rank=1, score=0.87)
+
+        data = MessageCitationSerializer(citation).data
+
+        self.assertEqual(data["chunk_id"], chunk.id)
+        self.assertEqual(data["document_id"], chunk.document_id)
+        self.assertEqual(data["document_title"], chunk.document.title)
+        self.assertEqual(data["content"], "some content")
+        self.assertEqual(data["score"], 0.87)
 
 
 class IsSummaryRequestTests(SimpleTestCase):

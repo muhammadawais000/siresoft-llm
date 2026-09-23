@@ -37,4 +37,3 @@ torch>=2.2
 tiktoken>=0.7
 gunicorn>=22.0
 requests>=2.31
-duckduckgo-search
