@@ -149,12 +149,11 @@ class StreamChatTurnTests(TestCase):
 
 
 class WebSearchFallbackTests(TestCase):
-    """stream_chat_turn()'s last-resort path: when neither retrieve() nor
-    the small-corpus fallback finds anything, rag.web_search.web_search()
-    is tried before giving up with NO_CONTEXT_MESSAGE. web_search() and
-    stream_web_answer() are mocked at the chat.services boundary --
-    rag/tests/test_web_search.py covers web_search()'s own SearXNG
-    integration.
+    """stream_chat_turn()'s last-resort path: when retrieve() finds
+    nothing, rag.web_search.web_search() is tried before giving up with
+    NO_CONTEXT_MESSAGE. web_search() and stream_web_answer() are mocked
+    at the chat.services boundary -- rag/tests/test_web_search.py covers
+    web_search()'s own SearXNG integration.
     """
 
     def setUp(self):

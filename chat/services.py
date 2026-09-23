@@ -22,7 +22,6 @@ from rag.generation import (
     SUMMARY_PROMPT,
     WEB_ANSWER_PROMPT,
     condense_question,
-    context_answers_question,
     get_llm,
     stream_answer,
     stream_web_answer,
@@ -101,21 +100,17 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
     else:
         results = retrieve(rewritten_query, document_ids=document_ids)
         answer_prompt = ANSWER_PROMPT
-        if not results:
-            # The cross-encoder is calibrated against prose passages; a
-            # short document like a resume (name/contact block, bullet
-            # lists) can score every chunk below the relevance threshold
-            # for an extractive query ("what's the name") even when the
-            # right chunk is right there. When the whole corpus in scope
-            # (document_ids, or every document if unscoped) is this small,
-            # falling back to full context costs little and avoids a
-            # false "nothing found" -- but only when that context actually
-            # answers the question; otherwise let it fall through to web
-            # search below instead of forcing an off-topic answer.
-            fallback_chunks = get_all_chunks(document_ids=document_ids)
-            if fallback_chunks and len(fallback_chunks) <= settings.RETRIEVAL_TOP_K:
-                if context_answers_question(llm, rewritten_query, fallback_chunks):
-                    results = fallback_chunks
+        # A previous version fell back to dumping the whole small corpus
+        # into context when retrieve() found nothing, gated by asking the
+        # LLM "does this context answer the question? YES/NO" -- meant to
+        # rescue short documents (e.g. a resume) where the cross-encoder
+        # scores every chunk below threshold for an extractive query. In
+        # practice that YES/NO gate proved unreliable with smaller local
+        # models: a resume mentioning "Python Django Developer" got judged
+        # as answering "what is Python?", producing an off-topic answer
+        # instead of falling through to web search. Removed rather than
+        # re-tuned again -- retrieve() finding nothing now always means
+        # "try web search next", no fuzzy LLM guess in between.
 
     if not results:
         web_results = web_search(rewritten_query)
