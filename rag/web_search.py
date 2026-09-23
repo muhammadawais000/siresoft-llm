@@ -21,9 +21,6 @@ class WebResult:
     snippet: str
 
     def to_citation(self, rank: int) -> dict:
-        # Mirrors RetrievedChunk.to_citation()'s shape so the SSE payload
-        # stays consistent, but chunk_id/document_id are None -- there's
-        # no Chunk row behind a web result.
         return {
             "rank": rank,
             "chunk_id": None,

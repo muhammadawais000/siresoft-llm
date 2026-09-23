@@ -77,36 +77,52 @@ SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
-WEB_ANSWER_PROMPT = """You are answering using web search results, NOT the user's uploaded documents.
-Start your answer by clearly telling the user this is based on a web search, not their documents.
-Cite sources using [N] markers matching the numbered context below.
+# Used when document retrieval (and the small-corpus fallback) both find
+# nothing relevant, and web_search() is used as a last resort instead.
+# Unlike ANSWER_PROMPT, this must explicitly disclose to the user that the
+# answer is NOT grounded in their uploaded documents -- the whole point of
+# this app's trust model is "answers come from your documents", so the one
+# case where that's not true has to be surfaced, not silently swapped in.
+WEB_ANSWER_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You are answering using web search results, NOT the user's uploaded "
+            "documents. Begin your answer by clearly telling the user this is "
+            "based on a web search rather than their documents.\n\n"
+            "Rules:\n"
+            "1. Answer using the web search context below. Cite sources inline "
+            "using the bracketed numbers (e.g. [1], [2]) next to the claims they "
+            "support.\n"
+            "2. If the web results don't actually answer the question, say so "
+            "plainly instead of guessing.\n"
+            "3. Be thorough: include every relevant fact the sources give you for "
+            "this question, using full sentences and multiple paragraphs or a "
+            "list where that helps readability.\n\n"
+            "Web search context:\n{context}",
+        ),
+        ("human", "{question}"),
+    ]
+)
 
-Web search context:
-{context}
-
-Question: {question}
-Answer:"""
-
-
-def format_web_context(results: list) -> str:
-    parts = []
-    for i, r in enumerate(results, start=1):
-        parts.append(f"[{i}] {r.title}\n{r.snippet}\nSource: {r.url}")
-    return "\n\n".join(parts)
-
-
-def stream_web_answer(model_name: str, question: str, results: list, prompt: str = WEB_ANSWER_PROMPT):
-    """Same shape as stream_answer() -- yields text tokens -- but builds
-    context from WebResult objects instead of RetrievedChunk/Chunk.
-    """
-    llm = get_llm(model_name)
-    context = format_web_context(results)
-    # NOTE: match this invocation to however stream_answer() actually
-    # calls the LLM (prompt | llm chain, or manual .format() + llm.stream()).
-    # Placeholder pattern:
-    chain = prompt | llm
-    for chunk in chain.stream({"context": context, "question": question}):
-        yield chunk.content
+# Cheap grading call used only by the small-corpus fallback in
+# chat.services.stream_chat_turn: when retrieve() finds nothing and the
+# whole corpus in scope is small enough to hand the LLM directly, this
+# distinguishes "short document, exact match just missed the relevance
+# threshold" (context DOES answer it -- use it) from "question is about
+# something the corpus doesn't cover at all" (context doesn't answer it --
+# fall through to web search instead of forcing an off-topic answer).
+RELEVANCE_CHECK_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "Context:\n{context}\n\n"
+            "Does the context above contain information that answers the "
+            "question below? Reply with exactly one word: YES or NO.",
+        ),
+        ("human", "{question}"),
+    ]
+)
 
 
 def get_llm(model_name: str) -> ChatOllama:
@@ -131,6 +147,18 @@ def condense_question(llm: ChatOllama, question: str, history: list[BaseMessage]
     return rewritten.strip() or question
 
 
+def context_answers_question(llm: ChatOllama, question: str, chunks: list[RetrievedChunk]) -> bool:
+    """True if `chunks` actually contains information answering `question`.
+
+    Used only by the small-corpus fallback path in chat.services -- see
+    RELEVANCE_CHECK_PROMPT above for why this check exists.
+    """
+    context = format_context(chunks)
+    chain = RELEVANCE_CHECK_PROMPT | llm | StrOutputParser()
+    answer = chain.invoke({"question": question, "context": context})
+    return answer.strip().upper().startswith("YES")
+
+
 def format_context(chunks: list[RetrievedChunk]) -> str:
     parts = []
     for i, retrieved in enumerate(chunks, start=1):
@@ -138,6 +166,13 @@ def format_context(chunks: list[RetrievedChunk]) -> str:
         location = f"page {chunk.page_number}" if chunk.page_number else chunk.section_heading
         header = f"[{i}] {chunk.document.title}" + (f" ({location})" if location else "")
         parts.append(f"{header}\n{chunk.content}")
+    return "\n\n".join(parts)
+
+
+def format_web_context(results: list) -> str:
+    parts = []
+    for i, r in enumerate(results, start=1):
+        parts.append(f"[{i}] {r.title}\n{r.snippet}\nSource: {r.url}")
     return "\n\n".join(parts)
 
 
@@ -156,4 +191,19 @@ def stream_answer(
     llm = get_llm(model_name)
     chain = prompt | llm | StrOutputParser()
     context = format_context(context_chunks)
+    yield from chain.stream({"question": question, "context": context})
+
+
+def stream_web_answer(
+    model_name: str,
+    question: str,
+    results: list,
+    prompt: ChatPromptTemplate = WEB_ANSWER_PROMPT,
+):
+    """Same shape as stream_answer() -- yields text tokens -- but builds
+    context from WebResult objects instead of RetrievedChunk/Chunk.
+    """
+    llm = get_llm(model_name)
+    chain = prompt | llm | StrOutputParser()
+    context = format_web_context(results)
     yield from chain.stream({"question": question, "context": context})

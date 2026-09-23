@@ -22,6 +22,7 @@ from rag.generation import (
     SUMMARY_PROMPT,
     WEB_ANSWER_PROMPT,
     condense_question,
+    context_answers_question,
     get_llm,
     stream_answer,
     stream_web_answer,
@@ -47,8 +48,10 @@ _SUMMARY_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
+
 def _is_summary_request(question: str) -> bool:
     return bool(_SUMMARY_INTENT_RE.search(question))
+
 
 def _history_as_messages(session: ChatSession) -> list[BaseMessage]:
     turns = settings.CHAT_HISTORY_TURNS * 2  # user + assistant per turn
@@ -58,6 +61,7 @@ def _history_as_messages(session: ChatSession) -> list[BaseMessage]:
         HumanMessage(content=m.content) if m.role == ChatMessage.Role.USER else AIMessage(content=m.content)
         for m in recent
     ]
+
 
 def stream_chat_turn(session: ChatSession, question: str, model_name: str, document_ids=None):
     """Generator of `{"event": ..., "data": ...}` dicts for one chat turn.
@@ -105,10 +109,13 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
             # right chunk is right there. When the whole corpus in scope
             # (document_ids, or every document if unscoped) is this small,
             # falling back to full context costs little and avoids a
-            # false "nothing found".
+            # false "nothing found" -- but only when that context actually
+            # answers the question; otherwise let it fall through to web
+            # search below instead of forcing an off-topic answer.
             fallback_chunks = get_all_chunks(document_ids=document_ids)
             if fallback_chunks and len(fallback_chunks) <= settings.RETRIEVAL_TOP_K:
-                results = fallback_chunks
+                if context_answers_question(llm, rewritten_query, fallback_chunks):
+                    results = fallback_chunks
 
     if not results:
         web_results = web_search(rewritten_query)
