@@ -17,8 +17,17 @@ from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from chat.models import ChatMessage, ChatSession, MessageCitation
 from core.exceptions import OllamaUnavailableError
 from core.ollama import get_installed_models
-from rag.generation import ANSWER_PROMPT, SUMMARY_PROMPT, condense_question, get_llm, stream_answer
+from rag.generation import (
+    ANSWER_PROMPT,
+    SUMMARY_PROMPT,
+    WEB_ANSWER_PROMPT,
+    condense_question,
+    get_llm,
+    stream_answer,
+    stream_web_answer,
+)
 from rag.retrieval import get_all_chunks, retrieve
+from rag.web_search import web_search
 
 logger = logging.getLogger(__name__)
 
@@ -38,10 +47,8 @@ _SUMMARY_INTENT_RE = re.compile(
     re.IGNORECASE,
 )
 
-
 def _is_summary_request(question: str) -> bool:
     return bool(_SUMMARY_INTENT_RE.search(question))
-
 
 def _history_as_messages(session: ChatSession) -> list[BaseMessage]:
     turns = settings.CHAT_HISTORY_TURNS * 2  # user + assistant per turn
@@ -51,7 +58,6 @@ def _history_as_messages(session: ChatSession) -> list[BaseMessage]:
         HumanMessage(content=m.content) if m.role == ChatMessage.Role.USER else AIMessage(content=m.content)
         for m in recent
     ]
-
 
 def stream_chat_turn(session: ChatSession, question: str, model_name: str, document_ids=None):
     """Generator of `{"event": ..., "data": ...}` dicts for one chat turn.
@@ -105,6 +111,52 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
                 results = fallback_chunks
 
     if not results:
+        web_results = web_search(rewritten_query)
+        if web_results:
+            full_answer = ""
+            for token in stream_web_answer(model_name, rewritten_query, web_results, prompt=WEB_ANSWER_PROMPT):
+                full_answer += token
+                yield {"event": "token", "data": token}
+
+            latency_ms = int((time.monotonic() - start) * 1000)
+            assistant_message = ChatMessage.objects.create(
+                session=session,
+                role=ChatMessage.Role.ASSISTANT,
+                content=full_answer,
+                model_used=model_name,
+                latency_ms=latency_ms,
+                rewritten_query=rewritten_query,
+            )
+            citation_rows = []
+            citation_payload = []
+            for rank, r in enumerate(web_results, start=1):
+                citation_rows.append(
+                    MessageCitation(
+                        message=assistant_message,
+                        chunk=None,
+                        source_url=r.url,
+                        source_title=r.title,
+                        rank=rank,
+                        score=None,
+                    )
+                )
+                citation_payload.append(r.to_citation(rank))
+            MessageCitation.objects.bulk_create(citation_rows)
+
+            session.updated_at = timezone.now()
+            session.save(update_fields=["updated_at"])
+
+            logger.info(
+                "chat turn: session=%s model=%s latency_ms=%d source=web query=%r",
+                session.id, model_name, latency_ms, question,
+            )
+            yield {
+                "event": "done",
+                "data": {"message_id": assistant_message.id, "citations": citation_payload, "source": "web"},
+            }
+            return
+
+        # Web search also found nothing (or is disabled) -- original fallback
         latency_ms = int((time.monotonic() - start) * 1000)
         assistant_message = ChatMessage.objects.create(
             session=session,

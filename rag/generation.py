@@ -77,6 +77,37 @@ SUMMARY_PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
+WEB_ANSWER_PROMPT = """You are answering using web search results, NOT the user's uploaded documents.
+Start your answer by clearly telling the user this is based on a web search, not their documents.
+Cite sources using [N] markers matching the numbered context below.
+
+Web search context:
+{context}
+
+Question: {question}
+Answer:"""
+
+
+def format_web_context(results: list) -> str:
+    parts = []
+    for i, r in enumerate(results, start=1):
+        parts.append(f"[{i}] {r.title}\n{r.snippet}\nSource: {r.url}")
+    return "\n\n".join(parts)
+
+
+def stream_web_answer(model_name: str, question: str, results: list, prompt: str = WEB_ANSWER_PROMPT):
+    """Same shape as stream_answer() -- yields text tokens -- but builds
+    context from WebResult objects instead of RetrievedChunk/Chunk.
+    """
+    llm = get_llm(model_name)
+    context = format_web_context(results)
+    # NOTE: match this invocation to however stream_answer() actually
+    # calls the LLM (prompt | llm chain, or manual .format() + llm.stream()).
+    # Placeholder pattern:
+    chain = prompt | llm
+    for chunk in chain.stream({"context": context, "question": question}):
+        yield chunk.content
+
 
 def get_llm(model_name: str) -> ChatOllama:
     return ChatOllama(

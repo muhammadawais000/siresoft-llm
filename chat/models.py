@@ -78,3 +78,11 @@ class MessageCitation(models.Model):
 
     def __str__(self):
         return f"citation #{self.rank} for message {self.message_id}"
+
+class MessageCitation(models.Model):
+    message = models.ForeignKey(ChatMessage, on_delete=models.CASCADE, related_name="citations")
+    chunk = models.ForeignKey(Chunk, on_delete=models.CASCADE, null=True, blank=True)  # <- null=True naya
+    source_url = models.URLField(null=True, blank=True)      # <- naya
+    source_title = models.CharField(max_length=255, null=True, blank=True)  # <- naya
+    rank = models.PositiveIntegerField()
+    score = models.FloatField(null=True, blank=True)  # <- already tha, ab null bhi allow karna hai (web citations ke liye)
