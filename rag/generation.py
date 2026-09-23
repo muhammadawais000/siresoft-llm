@@ -117,8 +117,13 @@ RELEVANCE_CHECK_PROMPT = ChatPromptTemplate.from_messages(
         (
             "system",
             "Context:\n{context}\n\n"
-            "Does the context above contain information that answers the "
-            "question below? Reply with exactly one word: YES or NO.",
+            "Does the context above directly and substantively answer the "
+            "question below -- not merely mention a related word or topic "
+            "in passing? For example, a resume that lists \"Python\" under "
+            "skills does NOT answer \"what is Python\" -- it never explains "
+            "what Python actually is, it just names it. Only answer YES if "
+            "someone could fully answer the question using nothing but this "
+            "context. Reply with exactly one word: YES or NO.",
         ),
         ("human", "{question}"),
     ]
