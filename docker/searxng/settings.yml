@@ -17,3 +17,18 @@ server:
   secret_key: "e54cf2161ee5c2be36071f58d0e05ac9e4278ce48862937391f906706134261b"
   limiter: false
   image_proxy: false
+
+# Self-hosted meta-search's real weak spot: engines that need a browser-like
+# scrape (Google especially) get IP-blocked easily from a plain server, so
+# the merged results can skew toward whatever weaker engine still responds
+# -- forum/blog posts outranking an authoritative source for a plain
+# definitional query like "what is python". Boosting Wikipedia (has a real
+# API, never blocks) and the other scrape-resistant engines pulls
+# definitional answers back toward the top without disabling anything.
+engines:
+  - name: wikipedia
+    weight: 6
+  - name: duckduckgo
+    weight: 2
+  - name: brave
+    weight: 2
