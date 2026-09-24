@@ -146,29 +146,25 @@
     text-decoration: underline;
   }
 
-  /* Login form fields: deliberately distinct from the app-wide `.input`
-     (which is rounded, filled, and used throughout the main SPA) -- the
-     login page asks for a transparent, sharp-cornered, thin-blue-border
-     look specific to this one screen. */
+  /* Login page is a fixed brand screen, not a themed one -- every color
+     here is hardcoded rather than pulled from the app's light/dark
+     surface variables, unlike everywhere else in the SPA. */
   .login-input {
-    @apply w-full rounded-none border border-accent/50 bg-transparent px-3 py-2.5 text-sm text-text
-           placeholder:text-text-subtle focus:outline-none focus:border-accent focus:ring-1
-           focus:ring-accent/30 transition-colors;
+    @apply w-full rounded-none border border-accent/50 bg-transparent px-3 py-2.5 text-sm font-bold text-black
+           placeholder:text-text-subtle placeholder:font-normal focus:outline-none focus:border-accent
+           focus:ring-1 focus:ring-accent/30 transition-colors;
   }
 
-  /* Login card + button: a solid, shadowed card and a navy Sign In button
-     (matching the header's own darkest blue) -- distinct from the app's
-     brighter accent blue used everywhere else in the SPA. */
   .login-card {
-    @apply shadow-lg;
+    @apply rounded-lg border border-border bg-white shadow-lg;
   }
 
   .login-btn {
-    @apply inline-flex w-full items-center justify-center rounded-md px-4 py-2.5 text-sm font-semibold
+    @apply inline-flex items-center justify-center rounded-md px-12 py-2.5 text-sm font-semibold
            text-white transition-colors;
-    background-color: #1e3a8a;
+    background-color: #03175d;
   }
   .login-btn:hover {
-    background-color: #17296b;
+    background-color: #020f45;
   }
 }
