@@ -16,14 +16,14 @@
          gradient + dot-pattern layers behind it show through instead
          (browsers fall back to the next background-image layer when one
          fails to load), so this header is never left blank. -->
-    <div class="absolute inset-0 bg-blue-950/60"></div>
+    <div class="absolute inset-0 bg-blue-950/35"></div>
 
     <div class="relative flex flex-col items-center">
-      <div class="flex items-center gap-3">
-        <img src="{% static 'img/logo-mark.png' %}" alt="" class="h-9 w-9 sm:h-10 sm:w-10">
+      <div class="flex items-center gap-6">
+        <img src="{% static 'img/logo-mark.png' %}" alt="" class="h-11 w-11 sm:h-12 sm:w-12">
         <div class="flex flex-col items-start">
-          <img src="{% static 'img/logo-wordmark.png' %}" alt="SireSoft" class="h-5 sm:h-6">
-          <p class="mt-0.5 text-xs font-semibold tracking-wide text-white sm:text-sm">Leader in Innovation</p>
+          <img src="{% static 'img/logo-wordmark.png' %}" alt="SireSoft" class="h-6 sm:h-8">
+          <p class="mt-0.5 text-sm font-semibold tracking-wide text-white sm:text-base">Leader in Innovation</p>
         </div>
       </div>
       <h1 class="mt-6 text-center text-2xl font-semibold text-white sm:text-4xl">Login Siresoft LLM</h1>
@@ -31,7 +31,7 @@
   </header>
 
   <div class="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
-    <div class="login-card w-full max-w-sm p-8">
+    <div class="login-card w-full max-w-md p-8">
       <p class="mb-6 text-center text-sm text-text-muted">Sign in to your workspace</p>
 
       {% if form.errors %}

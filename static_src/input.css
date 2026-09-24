@@ -150,7 +150,7 @@
      here is hardcoded rather than pulled from the app's light/dark
      surface variables, unlike everywhere else in the SPA. */
   .login-input {
-    @apply w-full rounded-none border border-accent/50 bg-transparent px-3 py-2.5 text-sm font-bold text-black
+    @apply w-full rounded-md border border-black bg-transparent px-3 py-2.5 text-sm font-bold text-black
            placeholder:text-text-subtle placeholder:font-normal focus:outline-none focus:border-accent
            focus:ring-1 focus:ring-accent/30 transition-colors;
   }
