@@ -155,4 +155,20 @@
            placeholder:text-text-subtle focus:outline-none focus:border-accent focus:ring-1
            focus:ring-accent/30 transition-colors;
   }
+
+  /* Login card + button: a solid, shadowed card and a navy Sign In button
+     (matching the header's own darkest blue) -- distinct from the app's
+     brighter accent blue used everywhere else in the SPA. */
+  .login-card {
+    @apply shadow-lg;
+  }
+
+  .login-btn {
+    @apply inline-flex w-full items-center justify-center rounded-md px-4 py-2.5 text-sm font-semibold
+           text-white transition-colors;
+    background-color: #1e3a8a;
+  }
+  .login-btn:hover {
+    background-color: #17296b;
+  }
 }
