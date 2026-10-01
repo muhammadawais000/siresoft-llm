@@ -21,6 +21,7 @@ from rag.generation import (
     ANSWER_PROMPT,
     SUMMARY_PROMPT,
     WEB_ANSWER_PROMPT,
+    answer_or_abstain,
     condense_question,
     get_llm,
     stream_answer,
@@ -92,6 +93,9 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
     yield {"event": "query_rewrite", "data": {"rewritten_query": rewritten_query}}
 
     is_summary = _is_summary_request(question)
+    # Set when the answer was already generated (borderline-match path
+    # below) and only needs emitting, rather than streamed from scratch.
+    pregenerated_answer = None
     if is_summary:
         # Bypass relevance ranking entirely -- a summary needs the whole
         # document, not a top-k match against the query.
@@ -100,17 +104,27 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
     else:
         results = retrieve(rewritten_query, document_ids=document_ids)
         answer_prompt = ANSWER_PROMPT
-        # A previous version fell back to dumping the whole small corpus
-        # into context when retrieve() found nothing, gated by asking the
-        # LLM "does this context answer the question? YES/NO" -- meant to
-        # rescue short documents (e.g. a resume) where the cross-encoder
-        # scores every chunk below threshold for an extractive query. In
-        # practice that YES/NO gate proved unreliable with smaller local
-        # models: a resume mentioning "Python Django Developer" got judged
-        # as answering "what is Python?", producing an off-topic answer
-        # instead of falling through to web search. Removed rather than
-        # re-tuned again -- retrieve() finding nothing now always means
-        # "try web search next", no fuzzy LLM guess in between.
+        # Three zones by best rerank score:
+        #   below RETRIEVAL_SIMILARITY_THRESHOLD -> retrieve() returns []
+        #       -> web search (nothing in the documents is even close)
+        #   at/above RETRIEVAL_CONFIDENT_THRESHOLD -> answer from documents
+        #   in between -> the LLM answers from the documents or abstains,
+        #       and abstaining falls through to web search.
+        # A single threshold can't do this alone: measured on
+        # bge-reranker-v2-m3, genuine questions about a resume scored as low
+        # as 0.006 ("work history", "where did he study" ~0.011) while
+        # off-topic ones sharing a keyword with it scored higher ("what is
+        # django" 0.057, "what is python" 0.020). Any cutoff either sent
+        # real document questions to the web or answered "what is Python?"
+        # from the resume.
+        if results and results[0].score < settings.RETRIEVAL_CONFIDENT_THRESHOLD:
+            pregenerated_answer = answer_or_abstain(model_name, rewritten_query, results)
+            if pregenerated_answer is None:
+                logger.info(
+                    "borderline match (best score=%.5f) judged not to answer query=%r -> web search",
+                    results[0].score, rewritten_query,
+                )
+                results = []
 
     if not results:
         web_results = web_search(rewritten_query)
@@ -176,10 +190,14 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
         yield {"event": "done", "data": {"message_id": assistant_message.id, "citations": []}}
         return
 
-    full_answer = ""
-    for token in stream_answer(model_name, rewritten_query, results, prompt=answer_prompt):
-        full_answer += token
-        yield {"event": "token", "data": token}
+    if pregenerated_answer is not None:
+        full_answer = pregenerated_answer
+        yield {"event": "token", "data": full_answer}
+    else:
+        full_answer = ""
+        for token in stream_answer(model_name, rewritten_query, results, prompt=answer_prompt):
+            full_answer += token
+            yield {"event": "token", "data": token}
 
     latency_ms = int((time.monotonic() - start) * 1000)
     assistant_message = ChatMessage.objects.create(

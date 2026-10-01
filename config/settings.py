@@ -286,6 +286,13 @@ RETRIEVAL_CANDIDATE_POOL = env.int("RETRIEVAL_CANDIDATE_POOL", default=20)
 # accept everything (too low). Don't assume one threshold works across
 # reranker models.
 RETRIEVAL_SIMILARITY_THRESHOLD = env.float("RETRIEVAL_SIMILARITY_THRESHOLD", default=0.01)
+# Best rerank score at/above which documents answer directly. Between the
+# two thresholds the LLM either answers from the documents or abstains to
+# web search (see chat.services.stream_chat_turn). On bge-reranker-v2-m3
+# off-topic questions sharing a keyword with a document reached ~0.06 and
+# clear real matches sat at 0.3-0.99, so 0.2 leaves margin on both sides;
+# it holds for bge-reranker-base too, whose confident matches are 0.7+.
+RETRIEVAL_CONFIDENT_THRESHOLD = env.float("RETRIEVAL_CONFIDENT_THRESHOLD", default=0.2)
 # RRF's k constant dampens the influence of low ranks; 60 is the standard
 # value from the original Reciprocal Rank Fusion paper (Cormack et al.).
 RETRIEVAL_RRF_K = env.int("RETRIEVAL_RRF_K", default=60)

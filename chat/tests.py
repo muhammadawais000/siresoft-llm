@@ -210,6 +210,74 @@ class WebSearchFallbackTests(TestCase):
         self.assertEqual(assistant.content, NO_CONTEXT_MESSAGE)
 
 
+@patch("chat.services.get_installed_models", return_value={"llama3.1:8b"})
+@patch("chat.services.condense_question", side_effect=lambda llm, q, h: q)
+@patch("chat.services.get_llm")
+class BorderlineMatchTests(TestCase):
+    """A best rerank score between RETRIEVAL_SIMILARITY_THRESHOLD and
+    RETRIEVAL_CONFIDENT_THRESHOLD lets the LLM answer from the documents or
+    abstain to web search, instead of the score alone deciding.
+    """
+
+    def setUp(self):
+        self.session = ChatSession.objects.create()
+        chunk = make_chunk("BS Computer Science, FAST NUCES Lahore, 2020.")
+        self.result = RetrievedChunk(chunk=chunk, score=settings.RETRIEVAL_CONFIDENT_THRESHOLD / 2)
+
+    def test_borderline_match_answered_from_documents(self, mock_get_llm, mock_condense, mock_installed):
+        with patch("chat.services.retrieve", return_value=[self.result]), patch(
+            "chat.services.answer_or_abstain", return_value="He studied at FAST NUCES [1]."
+        ), patch("chat.services.web_search") as mock_web, patch("chat.services.stream_answer") as mock_stream:
+            events = list(stream_chat_turn(self.session, "where did he study", "llama3.1:8b"))
+
+        mock_web.assert_not_called()
+        mock_stream.assert_not_called()
+        done_event = next(e for e in events if e["event"] == "done")
+        self.assertNotIn("source", done_event["data"])
+        self.assertEqual(done_event["data"]["citations"][0]["chunk_id"], self.result.chunk.id)
+        assistant = ChatMessage.objects.get(role=ChatMessage.Role.ASSISTANT)
+        self.assertEqual(assistant.content, "He studied at FAST NUCES [1].")
+
+    def test_borderline_match_abstaining_falls_back_to_web(self, mock_get_llm, mock_condense, mock_installed):
+        web_result = WebResult(title="Python", url="https://python.org", snippet="Python is a language.")
+        with patch("chat.services.retrieve", return_value=[self.result]), patch(
+            "chat.services.answer_or_abstain", return_value=None
+        ), patch("chat.services.web_search", return_value=[web_result]), patch(
+            "chat.services.stream_web_answer", return_value=iter(["From the web: a language."])
+        ):
+            events = list(stream_chat_turn(self.session, "what is python", "llama3.1:8b"))
+
+        done_event = next(e for e in events if e["event"] == "done")
+        self.assertEqual(done_event["data"]["source"], "web")
+        self.assertEqual(MessageCitation.objects.get().source_url, "https://python.org")
+
+    def test_confident_match_skips_the_abstain_check(self, mock_get_llm, mock_condense, mock_installed):
+        self.result.score = settings.RETRIEVAL_CONFIDENT_THRESHOLD
+        with patch("chat.services.retrieve", return_value=[self.result]), patch(
+            "chat.services.answer_or_abstain"
+        ) as mock_abstain, patch("chat.services.stream_answer", return_value=iter(["answer"])):
+            list(stream_chat_turn(self.session, "where did he study", "llama3.1:8b"))
+
+        mock_abstain.assert_not_called()
+
+
+class AnswerOrAbstainTests(SimpleTestCase):
+    def _run(self, reply):
+        from rag import generation
+
+        with patch.object(generation, "get_llm"), patch.object(generation, "ANSWER_OR_ABSTAIN_PROMPT") as prompt:
+            prompt.__or__.return_value.__or__.return_value.invoke.return_value = reply
+            return generation.answer_or_abstain("llama3.1:8b", "q", [])
+
+    def test_sentinel_means_abstain_even_when_wrapped_in_words(self):
+        self.assertIsNone(self._run("NO_ANSWER"))
+        self.assertIsNone(self._run("Sorry, NO_ANSWER."))
+        self.assertIsNone(self._run("   "))
+
+    def test_real_answer_is_returned_stripped(self):
+        self.assertEqual(self._run("  He studied at FAST [1].\n"), "He studied at FAST [1].")
+
+
 class MessageCitationSerializerTests(TestCase):
     """A web citation has chunk=None -- MessageCitationSerializer must not
     try to dereference chunk.document_id/.content/etc on it (that used to

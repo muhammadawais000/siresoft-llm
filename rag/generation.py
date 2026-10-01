@@ -105,6 +105,41 @@ WEB_ANSWER_PROMPT = ChatPromptTemplate.from_messages(
     ]
 )
 
+# Used only for borderline retrieval matches (best rerank score between
+# RETRIEVAL_SIMILARITY_THRESHOLD and RETRIEVAL_CONFIDENT_THRESHOLD -- see
+# chat.services). Reranker scores alone can't separate those: a vague but
+# genuine question ("where did he study") can score below an off-topic one
+# that merely shares a keyword with the document ("what is django" vs a
+# resume listing Django). So the model either answers from the documents or
+# abstains with NO_ANSWER_SENTINEL, and abstaining hands over to web search.
+NO_ANSWER_SENTINEL = "NO_ANSWER"
+
+ANSWER_OR_ABSTAIN_PROMPT = ChatPromptTemplate.from_messages(
+    [
+        (
+            "system",
+            "You answer questions using ONLY the context below, drawn from the "
+            "user's own uploaded documents.\n\n"
+            "Rules:\n"
+            f"1. If the context does not actually answer the question, reply with "
+            f"exactly {NO_ANSWER_SENTINEL} and nothing else.\n"
+            "2. A document that only mentions the topic does NOT answer it. For "
+            "example, a resume listing \"Python\" as a skill does not answer "
+            "\"what is Python?\" -- that question asks for a definition the "
+            f"context doesn't give, so reply {NO_ANSWER_SENTINEL}.\n"
+            "3. Otherwise answer strictly from the context, never from outside "
+            "knowledge, and cite sources inline using the bracketed numbers "
+            "(e.g. [1], [2]) next to the claims they support.\n"
+            "4. Be thorough: include every relevant fact the context gives for "
+            "this question, using full sentences and paragraphs or a list where "
+            "that helps readability.\n\n"
+            "Context:\n{context}",
+        ),
+        ("human", "{question}"),
+    ]
+)
+
+
 def get_llm(model_name: str) -> ChatOllama:
     return ChatOllama(
         base_url=settings.OLLAMA_BASE_URL,
@@ -160,6 +195,24 @@ def stream_answer(
     chain = prompt | llm | StrOutputParser()
     context = format_context(context_chunks)
     yield from chain.stream({"question": question, "context": context})
+
+
+def answer_or_abstain(model_name: str, question: str, context_chunks: list[RetrievedChunk]) -> str | None:
+    """Answer from `context_chunks`, or return None if the model says the
+    documents don't cover the question.
+
+    Not streamed: whether it abstains is only known once the reply is
+    complete, and tokens already sent to the client can't be taken back if
+    it turns out to be NO_ANSWER_SENTINEL. Checked with `in` rather than
+    equality because smaller local models sometimes wrap the sentinel in
+    extra words despite the instruction.
+    """
+    llm = get_llm(model_name)
+    chain = ANSWER_OR_ABSTAIN_PROMPT | llm | StrOutputParser()
+    answer = chain.invoke({"question": question, "context": format_context(context_chunks)}).strip()
+    if not answer or NO_ANSWER_SENTINEL in answer:
+        return None
+    return answer
 
 
 def stream_web_answer(
