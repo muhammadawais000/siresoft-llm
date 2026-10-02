@@ -20,8 +20,11 @@ CONDENSE_QUESTION_PROMPT = ChatPromptTemplate.from_messages(
             "system",
             "Given the conversation history and a follow-up question, rewrite the "
             "follow-up into a standalone question that includes all context needed "
-            "to understand it without the history. If it is already standalone, "
-            "return it unchanged. Output only the rewritten question, nothing else.",
+            "to understand it without the history. Only resolve what the follow-up "
+            "actually refers to (pronouns like he/it/that, \"what about ...\"); never "
+            "add topics, names, or details from the history that it doesn't refer to. "
+            "If it is already standalone, return it unchanged. Output only the "
+            "rewritten question, nothing else.",
         ),
         MessagesPlaceholder("history"),
         ("human", "{question}"),

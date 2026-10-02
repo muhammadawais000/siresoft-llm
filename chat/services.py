@@ -53,6 +53,30 @@ def _is_summary_request(question: str) -> bool:
     return bool(_SUMMARY_INTENT_RE.search(question))
 
 
+# Only questions that point back at the conversation (pronouns, "what
+# about ...", "tell me more") get rewritten with chat history. Rewriting
+# every question let the previous topic leak into standalone ones: after a
+# web answer about Python, "where did he study" became "where did Python's
+# creator study?" and missed the uploaded resume, and after a resume answer
+# "what is python" became "what is Ahmed's Python experience?" and was
+# answered from the resume instead of the web. A fresh session (e.g. after
+# a page refresh) has no history, which is why both only showed up mid-chat.
+_FOLLOW_UP_RE = re.compile(
+    r"^\s*(and|what about|how about)\b"
+    r"|\b(he|she|it|they|him|her|his|hers|its|their|theirs|them|this|that|these|those"
+    r"|above|previous|earlier|former|latter|same|more|else|also|again|another|further|elaborate)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_follow_up(question: str) -> bool:
+    return bool(_FOLLOW_UP_RE.search(question))
+
+
+def _best_score(results) -> float:
+    return results[0].score if results else -1.0
+
+
 def _history_as_messages(session: ChatSession) -> list[BaseMessage]:
     turns = settings.CHAT_HISTORY_TURNS * 2  # user + assistant per turn
     recent = list(session.messages.order_by("-created_at")[:turns])
@@ -89,7 +113,7 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
 
     start = time.monotonic()
     llm = get_llm(model_name)
-    rewritten_query = condense_question(llm, question, history)
+    rewritten_query = condense_question(llm, question, history) if _is_follow_up(question) else question
     yield {"event": "query_rewrite", "data": {"rewritten_query": rewritten_query}}
 
     is_summary = _is_summary_request(question)
@@ -104,6 +128,14 @@ def stream_chat_turn(session: ChatSession, question: str, model_name: str, docum
     else:
         results = retrieve(rewritten_query, document_ids=document_ids)
         answer_prompt = ANSWER_PROMPT
+        # A rewrite can still drag in the wrong referent ("he" resolved to
+        # someone from a web answer rather than the uploaded resume), so
+        # the question as typed also gets a retrieval pass and whichever
+        # matches the documents better is used from here on.
+        if rewritten_query != question:
+            raw_results = retrieve(question, document_ids=document_ids)
+            if _best_score(raw_results) > _best_score(results):
+                results, rewritten_query = raw_results, question
         # Three zones by best rerank score:
         #   below RETRIEVAL_SIMILARITY_THRESHOLD -> retrieve() returns []
         #       -> web search (nothing in the documents is even close)

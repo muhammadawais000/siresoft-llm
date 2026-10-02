@@ -143,9 +143,59 @@ class StreamChatTurnTests(TestCase):
         ), patch("chat.services.retrieve", return_value=[]), patch(
             "chat.services.web_search", return_value=[]
         ), patch("chat.services.stream_answer", return_value=iter([])):
-            list(stream_chat_turn(self.session, "a follow-up", "llama3.1:8b"))
+            list(stream_chat_turn(self.session, "tell me more about that", "llama3.1:8b"))
 
         self.assertEqual(captured["history"], [("human", "first question"), ("ai", "first answer")])
+
+
+@patch("chat.services.get_installed_models", return_value={"llama3.1:8b"})
+@patch("chat.services.get_llm")
+class FollowUpRewriteTests(TestCase):
+    """Chat history must only shape questions that refer back to it -- a
+    standalone question mid-chat has to search exactly like it would in a
+    fresh session, or the previous topic leaks into it.
+    """
+
+    def setUp(self):
+        self.session = ChatSession.objects.create()
+        ChatMessage.objects.create(session=self.session, role=ChatMessage.Role.USER, content="where did Ahmed study")
+        ChatMessage.objects.create(session=self.session, role=ChatMessage.Role.ASSISTANT, content="FAST NUCES [1].")
+
+    def test_standalone_question_is_not_rewritten_with_history(self, mock_get_llm, mock_installed):
+        with patch("chat.services.condense_question") as mock_condense, patch(
+            "chat.services.retrieve", return_value=[]
+        ) as mock_retrieve, patch("chat.services.web_search", return_value=[]):
+            list(stream_chat_turn(self.session, "what is python", "llama3.1:8b"))
+
+        mock_condense.assert_not_called()
+        mock_retrieve.assert_called_once_with("what is python", document_ids=None)
+
+    def test_follow_up_question_is_rewritten(self, mock_get_llm, mock_installed):
+        with patch("chat.services.condense_question", return_value="what did Ahmed study there") as mock_condense, patch(
+            "chat.services.retrieve", return_value=[]
+        ), patch("chat.services.web_search", return_value=[]):
+            list(stream_chat_turn(self.session, "what did he study there", "llama3.1:8b"))
+
+        mock_condense.assert_called_once()
+
+    def test_question_as_typed_wins_when_it_matches_documents_better(self, mock_get_llm, mock_installed):
+        chunk = make_chunk("BS Computer Science, FAST NUCES Lahore, 2020.")
+        typed = RetrievedChunk(chunk=chunk, score=0.9)
+
+        def fake_retrieve(query, document_ids=None):
+            return [typed] if query == "where did he study" else []
+
+        with patch("chat.services.condense_question", return_value="where did Guido van Rossum study"), patch(
+            "chat.services.retrieve", side_effect=fake_retrieve
+        ), patch("chat.services.web_search") as mock_web, patch(
+            "chat.services.stream_answer", return_value=iter(["FAST NUCES [1]."])
+        ) as mock_stream:
+            list(stream_chat_turn(self.session, "where did he study", "llama3.1:8b"))
+
+        mock_web.assert_not_called()
+        self.assertEqual(mock_stream.call_args.args[1], "where did he study")
+        assistant = ChatMessage.objects.filter(role=ChatMessage.Role.ASSISTANT).latest("created_at")
+        self.assertEqual(assistant.rewritten_query, "where did he study")
 
 
 class WebSearchFallbackTests(TestCase):
