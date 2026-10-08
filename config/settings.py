@@ -58,14 +58,16 @@ MIDDLEWARE = [
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
-    # Needs request.user, so must come after AuthenticationMiddleware.
-    "core.middleware.RequireActiveLoginMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
+    # Needs request.user and request._messages (it flashes a message when
+    # an access period expires), so must come after both middlewares above.
+    "core.middleware.RequireActiveLoginMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# No signup: every account is created by an admin (Django admin's stock
-# "Add user" form). EmailBackend lets the login page collect an email
+# Accounts come from self-signup (core.views.SignupView, time-limited --
+# see SIGNUP_ACCESS_HOURS) or from an admin (Django admin's "Add user" form,
+# no time limit). EmailBackend lets the login page collect an email
 # instead of a username; ModelBackend stays as a fallback so Django
 # admin's own (username-based) login form keeps working unchanged.
 AUTHENTICATION_BACKENDS = [
@@ -76,6 +78,29 @@ AUTHENTICATION_BACKENDS = [
 LOGIN_URL = "/login/"
 LOGIN_REDIRECT_URL = "/"
 LOGOUT_REDIRECT_URL = "/login/"
+
+# Hours a self-signup account stays active after its email is verified.
+# Changeable per user afterwards on the user's admin page ("Access").
+SIGNUP_ACCESS_HOURS = env.int("SIGNUP_ACCESS_HOURS", default=24)
+# Shown in the "your account is inactive" email and message.
+ADMIN_CONTACT_EMAIL = env("ADMIN_CONTACT_EMAIL", default="admin@siresoft.com")
+
+# --------------------------------------------------------------------------
+# Email -- signup verification links and "account inactive" notices.
+# The console backend (the default) only prints emails to the web
+# container's log; set EMAIL_BACKEND to the SMTP backend plus the
+# EMAIL_HOST* values for real delivery.
+# --------------------------------------------------------------------------
+
+EMAIL_BACKEND = env("EMAIL_BACKEND", default="django.core.mail.backends.console.EmailBackend")
+EMAIL_HOST = env("EMAIL_HOST", default="localhost")
+EMAIL_PORT = env.int("EMAIL_PORT", default=587)
+EMAIL_HOST_USER = env("EMAIL_HOST_USER", default="")
+EMAIL_HOST_PASSWORD = env("EMAIL_HOST_PASSWORD", default="")
+EMAIL_USE_TLS = env.bool("EMAIL_USE_TLS", default=True)
+EMAIL_USE_SSL = env.bool("EMAIL_USE_SSL", default=False)
+EMAIL_TIMEOUT = env.int("EMAIL_TIMEOUT", default=15)
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="Siresoft LLM <no-reply@siresoft.com>")
 
 ROOT_URLCONF = "config.urls"
 
@@ -194,6 +219,13 @@ CELERY_ACCEPT_CONTENT = ["json"]
 CELERY_TASK_SERIALIZER = "json"
 CELERY_RESULT_SERIALIZER = "json"
 CELERY_TASK_TRACK_STARTED = True
+# Run by the beat scheduler embedded in the worker container (`-B`, see
+# docker-compose.yml). Every 5 minutes is close enough: a user whose time
+# runs out in between is also caught on their next request by
+# RequireActiveLoginMiddleware.
+CELERY_BEAT_SCHEDULE = {
+    "expire-user-access": {"task": "core.tasks.expire_user_access", "schedule": 300.0},
+}
 # A single ingestion task can legitimately run for minutes on a large PDF;
 # time limits are generous but not infinite, so a stuck worker can't wedge
 # the queue forever.

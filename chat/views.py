@@ -39,9 +39,17 @@ class ChatSessionViewSet(
     mixins.DestroyModelMixin,
     GenericViewSet,
 ):
-    queryset = ChatSession.objects.all()
     # The history popover renders the whole recent-sessions list at once.
     pagination_class = None
+
+    def get_queryset(self):
+        # Each user only ever sees their own chats -- and owning them is
+        # what lets core.access.expire_user() delete exactly that user's
+        # history when a time-limited account expires.
+        return ChatSession.objects.filter(user=self.request.user)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
 
     def get_serializer_class(self):
         if self.action == "list":
@@ -82,7 +90,7 @@ class SendMessageView(View):
     """
 
     def post(self, request, session_id, *args, **kwargs):
-        session = get_object_or_404(ChatSession, pk=session_id)
+        session = get_object_or_404(ChatSession, pk=session_id, user=request.user)
 
         try:
             body = json.loads(request.body or "{}")

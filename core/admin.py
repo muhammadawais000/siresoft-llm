@@ -4,23 +4,83 @@ from django.contrib.auth.models import User
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import path
+from django.utils import timezone
 from django.utils.html import format_html
 
-# Signup is deliberately not a feature (see the login page) -- every
-# account is created here, by an admin, via the stock "Add user" form
-# UserAdmin already provides. This just adds the workflow the brief calls
-# for: force-logout-and-deactivate, both as a bulk action and as a
-# one-click button per row, rather than making an admin separately
-# uncheck "Active" and remember that a deactivated user needs kicking out
-# of any session they're already in.
+from core.access import start_access_period
+from core.models import UserAccess
+
+# Accounts come from self-signup (time-limited, see core.access) or from
+# the stock "Add user" form here (no time limit). On top of UserAdmin this
+# adds: force-logout-and-deactivate, both as a bulk action and as a
+# one-click button per row; and the "Access" section, where an admin sets
+# how many hours a time-limited account stays active.
 
 admin.site.unregister(User)
 
 
+class UserAccessInline(admin.StackedInline):
+    model = UserAccess
+    can_delete = False
+    extra = 0
+    fields = ("access_hours", "access_starts_at", "expires_at", "email_verified")
+    readonly_fields = ("expires_at",)
+
+    @admin.display(description="Expires at")
+    def expires_at(self, obj):
+        return obj.expires_at or "Never"
+
+
 @admin.register(User)
 class SiresoftUserAdmin(UserAdmin):
-    list_display = (*UserAdmin.list_display, "force_logout_button")
-    actions = [*UserAdmin.actions, "force_logout_and_deactivate"]
+    list_display = (*UserAdmin.list_display, "is_active", "access_hours", "access_expires", "force_logout_button")
+    actions = [*UserAdmin.actions, "force_logout_and_deactivate", "reactivate_and_restart_access"]
+    inlines = [*UserAdmin.inlines, UserAccessInline]
+
+    def get_queryset(self, request):
+        return super().get_queryset(request).select_related("access")
+
+    @admin.display(description="Access hours")
+    def access_hours(self, obj):
+        access = getattr(obj, "access", None)
+        return access.access_hours if access and access.access_hours is not None else "No limit"
+
+    @admin.display(description="Access expires")
+    def access_expires(self, obj):
+        access = getattr(obj, "access", None)
+        if access is None or access.expires_at is None:
+            return "Never"
+        if access.is_expired():
+            return format_html('<span style="color:#b91c1c;">Expired {}</span>', access.expires_at.strftime("%Y-%m-%d %H:%M"))
+        return access.expires_at.strftime("%Y-%m-%d %H:%M")
+
+    def save_model(self, request, obj, form, change):
+        # Remembered for save_related(): the inline is saved after this, so
+        # restarting the clock here would be overwritten by the inline form.
+        request._siresoft_reactivated = change and "is_active" in form.changed_data and obj.is_active
+        super().save_model(request, obj, form, change)
+
+    def save_related(self, request, form, formsets, change):
+        super().save_related(request, form, formsets, change)
+        if getattr(request, "_siresoft_reactivated", False):
+            self._restart_access(form.instance)
+
+    def _restart_access(self, user):
+        access = UserAccess.objects.filter(user=user, access_hours__isnull=False).first()
+        if access is not None:
+            start_access_period(access, timezone.now())
+            access.email_verified = True
+            access.save()
+
+    @admin.action(description="Re-activate selected users and restart their access hours")
+    def reactivate_and_restart_access(self, request, queryset):
+        count = 0
+        for user in queryset:
+            user.is_active = True
+            user.save(update_fields=["is_active"])
+            self._restart_access(user)
+            count += 1
+        self.message_user(request, f"Re-activated {count} user(s); each one's access hours start again from now.")
 
     class Media:
         js = ("admin/js/force_logout.js",)

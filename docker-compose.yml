@@ -73,7 +73,11 @@ services:
   worker:
     build: .
     restart: unless-stopped
-    command: ["celery", "-A", "config", "worker", "--loglevel=info", "--concurrency=2"]
+    # -B embeds the beat scheduler that runs CELERY_BEAT_SCHEDULE (expiring
+    # time-limited accounts). Fine with exactly one worker container; if
+    # this service is ever scaled up, move beat to its own service instead.
+    command: ["celery", "-A", "config", "worker", "-B", "--schedule", "/tmp/celerybeat-schedule",
+              "--loglevel=info", "--concurrency=2"]
     env_file: .env
     environment:
       DATABASE_URL: postgres://${POSTGRES_USER:-siresoft}:${POSTGRES_PASSWORD:-siresoft}@db:5432/${POSTGRES_DB:-siresoft_rag}

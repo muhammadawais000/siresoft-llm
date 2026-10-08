@@ -1,7 +1,7 @@
 """Site-wide login gate.
 
 Every page and API endpoint requires a logged-in, active user except the
-login page itself, Django admin (which has its own login form and
+login, signup and email-verification pages, Django admin (which has its own login form and
 is_staff gate), and static/media files. One middleware covering
 everything was chosen over sprinkling LoginRequiredMixin / DRF permission
 classes across every view -- simpler to audit, and impossible to
@@ -16,11 +16,15 @@ check, run on their very next request.
 """
 
 from django.conf import settings
+from django.contrib import messages
 from django.contrib.auth import logout
 from django.http import JsonResponse
 from django.shortcuts import redirect
 
-_EXEMPT_PREFIXES = ("/admin/", "/static/", "/media/")
+from core.access import access_expired, expire_user
+
+_EXEMPT_PREFIXES = ("/admin/", "/static/", "/media/", "/activate/")
+_EXEMPT_PATHS = (settings.LOGIN_URL, "/signup/")
 
 
 class RequireActiveLoginMiddleware:
@@ -28,10 +32,19 @@ class RequireActiveLoginMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        if request.path == settings.LOGIN_URL or request.path.startswith(_EXEMPT_PREFIXES):
+        if request.path in _EXEMPT_PATHS or request.path.startswith(_EXEMPT_PREFIXES):
             return self.get_response(request)
 
         user = request.user
+        # A time-limited account whose period ran out since the last
+        # core.tasks.expire_user_access run is expired here, on the spot.
+        if user.is_authenticated and user.is_active and access_expired(user):
+            expire_user(user)
+            messages.info(
+                request,
+                f"Your access period has ended and your account is now inactive. "
+                f"Contact {settings.ADMIN_CONTACT_EMAIL} to have it re-activated.",
+            )
         if not user.is_authenticated or not user.is_active:
             if user.is_authenticated:
                 logout(request)
