@@ -49,7 +49,29 @@ document.addEventListener('alpine:init', () => {
     // Lifecycle
     // ---------------------------------------------------------------
     async init() {
+      this.showInitialMessages();
+      this.watchAccountStatus();
       await Promise.all([this.loadDocuments(), this.loadModels(), this.loadSessions()]);
+    },
+
+    showInitialMessages() {
+      const el = document.getElementById('initial-messages');
+      if (!el) return;
+      JSON.parse(el.textContent).forEach((m) => this.toast(m.text, m.type, 10000));
+    },
+
+    // Asks the server every few seconds whether this account is still
+    // active, so an admin turning it off (or cutting its hours to 0)
+    // logs the user out right away instead of on their next click.
+    watchAccountStatus() {
+      setInterval(async () => {
+        try {
+          const resp = await fetch('/api/auth/status/');
+          if (resp.status === 401) window.location.href = '/login/';
+        } catch (err) {
+          // Network blip: try again on the next tick.
+        }
+      }, 10000);
     },
 
     // ---------------------------------------------------------------
@@ -469,12 +491,12 @@ document.addEventListener('alpine:init', () => {
     // ---------------------------------------------------------------
     // Toasts
     // ---------------------------------------------------------------
-    toast(message, type = 'error') {
+    toast(message, type = 'error', duration = 5000) {
       const id = ++this.toastSeq;
       this.toasts.push({ id, message, type });
       setTimeout(() => {
         this.toasts = this.toasts.filter((t) => t.id !== id);
-      }, 5000);
+      }, duration);
     },
   }));
 });

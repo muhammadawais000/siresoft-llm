@@ -8,6 +8,24 @@ def upload_to(instance, filename):
     return f"documents/{instance.sha256[:2]}/{instance.sha256}/{filename}"
 
 
+def documents_for(user):
+    """The documents `user` uploaded -- the only ones they can see,
+    manage, or get answers from."""
+    return Document.objects.filter(uploaded_by=user)
+
+
+def allowed_document_ids(user, requested=None) -> list[int]:
+    """Ids of the documents a chat turn or search request may use: the user's own
+    uploads, narrowed to `requested` when the client asks for specific
+    ones. Always a list (possibly empty), never None -- None would mean
+    "search every document" to rag.retrieval.
+    """
+    owned = documents_for(user).values_list("id", flat=True)
+    if requested:
+        owned = owned.filter(id__in=requested)
+    return list(owned)
+
+
 class Document(TimeStampedModel):
     """A single knowledge source: an uploaded file or a fetched URL.
 
@@ -75,10 +93,10 @@ class Document(TimeStampedModel):
             models.Index(fields=["status"]),
         ]
         constraints = [
-            # Duplicate detection is scoped to the whole library, not
-            # per-user, since re-embedding the same file twice wastes
-            # compute regardless of who uploaded it.
-            models.UniqueConstraint(fields=["sha256"], name="unique_document_sha256"),
+            # Duplicate detection is per user: each user only sees the
+            # documents they uploaded themselves, so a file someone else
+            # already uploaded is still a new upload for this user.
+            models.UniqueConstraint(fields=["uploaded_by", "sha256"], name="unique_document_per_user_sha256"),
         ]
 
     def __str__(self):

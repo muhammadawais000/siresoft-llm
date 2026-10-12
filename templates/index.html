@@ -370,6 +370,8 @@
     </aside>
   </div>
 
+  {{ initial_messages|json_script:"initial-messages" }}
+
   <!-- ===================== Toasts ===================== -->
   <div class="pointer-events-none fixed bottom-4 right-4 z-50 flex flex-col gap-2">
     <template x-for="t in toasts" :key="t.id">

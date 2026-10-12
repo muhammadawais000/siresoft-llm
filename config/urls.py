@@ -10,7 +10,7 @@ from django.contrib.auth.views import LogoutView
 from django.urls import include, path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from core.views import ActivateAccountView, IndexView, SignupView, SiresoftLoginView
+from core.views import ActivateAccountView, AuthStatusView, IndexView, SignupView, SiresoftLoginView
 
 urlpatterns = [
     path("", IndexView.as_view(), name="index"),
@@ -19,6 +19,7 @@ urlpatterns = [
     path("activate/<str:uidb64>/<str:token>/", ActivateAccountView.as_view(), name="activate"),
     path("logout/", LogoutView.as_view(), name="logout"),
     path("admin/", admin.site.urls),
+    path("api/auth/status/", AuthStatusView.as_view(), name="auth-status"),
     path("api/documents/", include("documents.urls")),
     path("api/rag/", include("rag.urls")),
     path("api/chat/", include("chat.urls")),

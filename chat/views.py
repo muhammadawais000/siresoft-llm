@@ -25,6 +25,8 @@ from rest_framework.viewsets import GenericViewSet
 from core.exceptions import OllamaUnavailableError
 from core.ollama import get_installed_models
 
+from documents.models import allowed_document_ids
+
 from .models import ChatSession
 from .serializers import ChatSessionDetailSerializer, ChatSessionListSerializer
 from .services import stream_chat_turn
@@ -99,7 +101,7 @@ class SendMessageView(View):
 
         question = (body.get("question") or "").strip()
         model_name = body.get("model") or settings.OLLAMA_DEFAULT_MODEL
-        document_ids = body.get("document_ids") or None
+        document_ids = allowed_document_ids(request.user, body.get("document_ids"))
 
         if not question:
             return JsonResponse({"detail": "'question' is required."}, status=status.HTTP_400_BAD_REQUEST)

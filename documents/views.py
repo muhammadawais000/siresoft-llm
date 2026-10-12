@@ -16,7 +16,7 @@ from rest_framework.views import APIView
 from rest_framework.viewsets import GenericViewSet
 
 from core.exceptions import FileTooLargeError, UnsupportedFileTypeError
-from documents.models import Document
+from documents.models import Document, documents_for
 from documents.serializers import DocumentSerializer
 from documents.tasks import ingest_document
 from documents.validators import (
@@ -66,7 +66,7 @@ class DocumentUploadFilesView(APIView):
         except (UnsupportedFileTypeError, FileTooLargeError) as exc:
             return {"filename": f.name, "duplicate": False, "error": str(exc), "document": None}
 
-        existing = Document.objects.filter(sha256=sha256).first()
+        existing = documents_for(request.user).filter(sha256=sha256).first()
         if existing:
             return {
                 "filename": f.name,
@@ -117,7 +117,7 @@ class DocumentUploadURLView(APIView):
 
     def _handle_one(self, request, url):
         sha256 = compute_url_sha256(url)
-        existing = Document.objects.filter(sha256=sha256).first()
+        existing = documents_for(request.user).filter(sha256=sha256).first()
         if existing:
             return {
                 "filename": url,
@@ -151,12 +151,15 @@ class DocumentViewSet(
     mixins.DestroyModelMixin,
     GenericViewSet,
 ):
-    queryset = Document.objects.all()
     serializer_class = DocumentSerializer
     # The document library sidebar renders (and client-side filters) the
     # whole list at once rather than paging through it -- standard REST
     # pagination would silently hide anything past page 1.
     pagination_class = None
+
+    def get_queryset(self):
+        # Each user only sees (and can delete/re-index) their own uploads.
+        return documents_for(self.request.user)
 
     def perform_destroy(self, instance):
         if instance.file:

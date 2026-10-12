@@ -6,6 +6,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.views import LoginView
 from django.db import transaction
+from django.http import JsonResponse
 from django.shortcuts import redirect
 from django.utils.decorators import method_decorator
 from django.utils.encoding import force_str
@@ -14,7 +15,7 @@ from django.views import View
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.generic import FormView, TemplateView
 
-from core.access import get_access, send_verification_email, start_access_period
+from core.access import get_access, remaining_text, send_verification_email, start_access_period
 from core.forms import EmailAuthenticationForm, SignupForm
 from core.models import UserAccess
 
@@ -36,11 +37,46 @@ class IndexView(TemplateView):
 
     template_name = "index.html"
 
+    def get_context_data(self, **kwargs):
+        # The SPA doesn't render Django messages itself; hand them to
+        # app.js, which shows them as toasts (e.g. the access-hours notice
+        # set at login).
+        context = super().get_context_data(**kwargs)
+        context["initial_messages"] = [
+            {"text": str(m), "type": "error" if m.level_tag == "error" else "info"}
+            for m in messages.get_messages(self.request)
+        ]
+        return context
+
 
 class SiresoftLoginView(LoginView):
     template_name = "registration/login.html"
     form_class = EmailAuthenticationForm
     redirect_authenticated_user = True
+
+    def form_valid(self, form):
+        response = super().form_valid(form)
+        access = get_access(form.get_user())
+        if access is not None and access.expires_at is not None:
+            messages.success(
+                self.request,
+                f"Welcome! You have {remaining_text(access)} of usage on your account.",
+            )
+        return response
+
+
+class AuthStatusView(View):
+    """GET /api/auth/status/ -- polled by app.js every few seconds so a
+    user whose access is turned off in the admin panel is logged out right
+    away, without having to click or refresh anything. The checks
+    themselves live in RequireActiveLoginMiddleware, which answers 401
+    before this view runs once the account is inactive or out of time.
+    """
+
+    def get(self, request):
+        access = get_access(request.user)
+        expires_at = access.expires_at if access is not None else None
+        return JsonResponse({"active": True, "expires_at": expires_at.isoformat() if expires_at else None})
 
 
 class SignupView(FormView):

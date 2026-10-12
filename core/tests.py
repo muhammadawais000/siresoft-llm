@@ -15,6 +15,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from chat.models import ChatMessage, ChatSession
+from core.access import apply_admin_access_change
 from core.auth_backends import EmailBackend
 from core.models import UserAccess
 from core.tasks import expire_user_access
@@ -333,3 +334,75 @@ class ChatSessionOwnershipTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(resp.status_code, 404)
+
+
+class AdminHoursChangeTests(TestCase):
+    """core.access.apply_admin_access_change -- what saving a user's admin
+    page does when "Active" or the access hours change.
+    """
+
+    def _signup_user(self, hours=24, started_hours_ago=1, active=True):
+        user = make_user(email="timed@example.com", is_active=active)
+        UserAccess.objects.create(
+            user=user, access_hours=hours, access_starts_at=timezone.now() - timedelta(hours=started_hours_ago)
+        )
+        ChatSession.objects.create(user=user)
+        return user
+
+    def test_setting_hours_to_zero_expires_the_user_immediately(self):
+        user = self._signup_user()
+        user.access.access_hours = 0
+        user.access.save()
+        apply_admin_access_change(user, reactivated=False, hours_changed=True)
+        user.refresh_from_db()
+        self.assertFalse(user.is_active)
+        self.assertFalse(ChatSession.objects.filter(user=user).exists())
+
+    def test_giving_an_inactive_user_hours_reactivates_them_from_now(self):
+        user = self._signup_user(hours=0, started_hours_ago=30, active=False)
+        user.access.access_hours = 24
+        user.access.save()
+        apply_admin_access_change(user, reactivated=False, hours_changed=True)
+        user.refresh_from_db()
+        self.assertTrue(user.is_active)
+        self.assertFalse(user.access.is_expired())
+        self.assertGreater(user.access.expires_at, timezone.now() + timedelta(hours=23))
+
+    def test_reactivated_user_can_log_in_and_is_told_their_hours(self):
+        user = self._signup_user(hours=0, started_hours_ago=30, active=False)
+        user.access.access_hours = 24
+        user.access.save()
+        apply_admin_access_change(user, reactivated=False, hours_changed=True)
+
+        client = Client()
+        resp = client.post(reverse("login"), {"username": "timed@example.com", "password": "s3cret-pass"}, follow=True)
+        self.assertEqual(resp.status_code, 200)
+        self.assertTrue(resp.wsgi_request.user.is_authenticated)
+        texts = [m["text"] for m in resp.context["initial_messages"]]
+        self.assertTrue(any("23 hours 59 minutes" in t or "24 hours" in t for t in texts), texts)
+
+    def test_extending_an_active_users_hours_keeps_their_start_time(self):
+        user = self._signup_user(hours=24, started_hours_ago=10)
+        started = user.access.access_starts_at
+        user.access.access_hours = 48
+        user.access.save()
+        apply_admin_access_change(user, reactivated=False, hours_changed=True)
+        user.access.refresh_from_db()
+        self.assertEqual(user.access.access_starts_at, started)
+
+
+class AuthStatusTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.user = make_user(email="live@example.com")
+        self.client.login(username="live@example.com", password="s3cret-pass")
+
+    def test_active_user_gets_200(self):
+        self.assertEqual(self.client.get("/api/auth/status/").status_code, 200)
+
+    def test_deactivated_user_gets_401_and_a_reason_on_the_login_page(self):
+        self.user.is_active = False
+        self.user.save()
+        self.assertEqual(self.client.get("/api/auth/status/").status_code, 401)
+        resp = self.client.get(reverse("login"))
+        self.assertContains(resp, "inactive")

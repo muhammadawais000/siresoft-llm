@@ -59,7 +59,7 @@ def get_all_chunks(document_ids: list[int] | None = None) -> list[RetrievedChunk
     retrieve()'s results.
     """
     qs = Chunk.objects.select_related("document").order_by("document_id", "chunk_index")
-    if document_ids:
+    if document_ids is not None:
         qs = qs.filter(document_id__in=document_ids)
     return [RetrievedChunk(chunk=c, score=1.0) for c in qs]
 
@@ -68,7 +68,7 @@ def dense_search(query_vector: list[float], pool_size: int, document_ids=None) -
     from pgvector.django import CosineDistance
 
     qs = Chunk.objects.all()
-    if document_ids:
+    if document_ids is not None:
         qs = qs.filter(document_id__in=document_ids)
     qs = qs.annotate(distance=CosineDistance("embedding", query_vector)).order_by("distance")
     return list(qs.values_list("id", flat=True)[:pool_size])
@@ -79,7 +79,7 @@ def sparse_search(query_text: str, pool_size: int, document_ids=None) -> list[in
     # -exclusions) instead of requiring Postgres's terser tsquery operators.
     search_query = SearchQuery(query_text, search_type="websearch")
     qs = Chunk.objects.filter(content_tsv=search_query)
-    if document_ids:
+    if document_ids is not None:
         qs = qs.filter(document_id__in=document_ids)
     qs = qs.annotate(rank=SearchRank("content_tsv", search_query)).order_by("-rank")
     return list(qs.values_list("id", flat=True)[:pool_size])

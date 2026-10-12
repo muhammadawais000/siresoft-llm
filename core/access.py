@@ -52,9 +52,51 @@ def expire_user(user):
     logger.info("access expired: user=%s deactivated, %d chat rows deleted", user.pk, deleted)
 
 
+def remaining_text(access, now=None) -> str:
+    """'23 hours 59 minutes' -- time left in an access period."""
+    seconds = max(0, int((access.expires_at - (now or timezone.now())).total_seconds()))
+    hours, minutes = seconds // 3600, (seconds % 3600) // 60
+    parts = []
+    if hours:
+        parts.append(f"{hours} hour{'s' if hours != 1 else ''}")
+    if minutes or not hours:
+        parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
+    return " ".join(parts)
+
+
 def start_access_period(access, now=None):
     access.access_starts_at = now or timezone.now()
     access.last_notice_sent_at = None
+
+
+def restart_access(user):
+    """Re-activate `user` with a fresh access period counting from now."""
+    access = UserAccess.objects.filter(user=user, access_hours__isnull=False).first()
+    if access is not None:
+        start_access_period(access)
+        access.email_verified = True
+        access.save()
+    if not user.is_active:
+        user.is_active = True
+        user.save(update_fields=["is_active"])
+
+
+def apply_admin_access_change(user, *, reactivated: bool, hours_changed: bool):
+    """Act on an admin saving a user's page, after the save.
+
+    - Ticking "Active", or giving an inactive user hours (e.g. 0 -> 24),
+      re-activates them with their hours counting from now.
+    - Cutting an active user's hours so their time is already up (e.g. to
+      0) expires them now; app.js's status check logs them out in seconds.
+    """
+    access = UserAccess.objects.filter(user=user, access_hours__isnull=False).first()
+    if access is None:
+        return
+    if reactivated or (hours_changed and not user.is_active and access.access_hours > 0):
+        restart_access(user)
+        access.refresh_from_db()
+    if user.is_active and access.is_expired():
+        expire_user(user)
 
 
 def _notice_allowed(access) -> bool:

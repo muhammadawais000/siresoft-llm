@@ -17,7 +17,7 @@ check, run on their very next request.
 
 from django.conf import settings
 from django.contrib import messages
-from django.contrib.auth import logout
+from django.contrib.auth import SESSION_KEY, logout
 from django.http import JsonResponse
 from django.shortcuts import redirect
 
@@ -40,14 +40,18 @@ class RequireActiveLoginMiddleware:
         # core.tasks.expire_user_access run is expired here, on the spot.
         if user.is_authenticated and user.is_active and access_expired(user):
             expire_user(user)
-            messages.info(
-                request,
-                f"Your access period has ended and your account is now inactive. "
-                f"Contact {settings.ADMIN_CONTACT_EMAIL} to have it re-activated.",
-            )
         if not user.is_authenticated or not user.is_active:
-            if user.is_authenticated:
+            # A deactivated user arrives here already anonymous (Django's
+            # backend refuses to load an inactive user from the session),
+            # so a user id still in the session is what says "this was a
+            # signed-in user who just lost access" rather than a visitor.
+            if user.is_authenticated or SESSION_KEY in request.session:
                 logout(request)
+                messages.info(
+                    request,
+                    f"Your account is now inactive. Contact {settings.ADMIN_CONTACT_EMAIL} "
+                    f"to have it re-activated.",
+                )
             if request.path.startswith("/api/"):
                 return JsonResponse({"detail": "Authentication required."}, status=401)
             return redirect(settings.LOGIN_URL)

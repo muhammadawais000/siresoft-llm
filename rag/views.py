@@ -8,6 +8,7 @@ chat generation chain calls into in Phase 4.
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
+from documents.models import allowed_document_ids
 from rag.retrieval import retrieve
 from rag.serializers import RetrievalRequestSerializer, RetrievedChunkSerializer
 
@@ -25,7 +26,7 @@ class RetrievalSearchView(APIView):
             top_k=data.get("top_k"),
             candidate_pool=data.get("candidate_pool"),
             similarity_threshold=data.get("similarity_threshold"),
-            document_ids=data.get("document_ids"),
+            document_ids=allowed_document_ids(request.user, data.get("document_ids")),
         )
 
         payload = [

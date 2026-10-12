@@ -4,10 +4,9 @@ from django.contrib.auth.models import User
 from django.http import HttpResponseNotAllowed, JsonResponse
 from django.shortcuts import get_object_or_404
 from django.urls import path
-from django.utils import timezone
 from django.utils.html import format_html
 
-from core.access import start_access_period
+from core.access import apply_admin_access_change, restart_access
 from core.models import UserAccess
 
 # Accounts come from self-signup (time-limited, see core.access) or from
@@ -62,23 +61,20 @@ class SiresoftUserAdmin(UserAdmin):
 
     def save_related(self, request, form, formsets, change):
         super().save_related(request, form, formsets, change)
-        if getattr(request, "_siresoft_reactivated", False):
-            self._restart_access(form.instance)
-
-    def _restart_access(self, user):
-        access = UserAccess.objects.filter(user=user, access_hours__isnull=False).first()
-        if access is not None:
-            start_access_period(access, timezone.now())
-            access.email_verified = True
-            access.save()
+        hours_changed = any(
+            "access_hours" in f.changed_data for fs in formsets if fs.model is UserAccess for f in fs.forms
+        )
+        apply_admin_access_change(
+            form.instance,
+            reactivated=getattr(request, "_siresoft_reactivated", False),
+            hours_changed=hours_changed,
+        )
 
     @admin.action(description="Re-activate selected users and restart their access hours")
     def reactivate_and_restart_access(self, request, queryset):
         count = 0
         for user in queryset:
-            user.is_active = True
-            user.save(update_fields=["is_active"])
-            self._restart_access(user)
+            restart_access(user)
             count += 1
         self.message_user(request, f"Re-activated {count} user(s); each one's access hours start again from now.")
 
