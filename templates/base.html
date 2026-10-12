@@ -15,7 +15,7 @@
   </script>
 
   <link rel="preload" href="{% static 'fonts/inter-var.woff2' %}" as="font" type="font/woff2" crossorigin>
-  <link rel="stylesheet" href="{% static 'css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'css/app.css' %}?v={{ STATIC_VERSION }}">
   {% block extra_head %}{% endblock %}
 </head>
 <body class="h-screen w-screen overflow-hidden bg-bg text-text antialiased">
@@ -23,7 +23,7 @@
   <!-- app.js registers Alpine.data(...) on 'alpine:init', so it must run
        before alpine.min.js bootstraps -- both deferred scripts execute in
        document order, so this ordering (not download order) is what matters. -->
-  <script defer src="{% static 'js/app.js' %}"></script>
+  <script defer src="{% static 'js/app.js' %}?v={{ STATIC_VERSION }}"></script>
   <script defer src="{% static 'js/vendor/alpine.min.js' %}"></script>
 </body>
 </html>

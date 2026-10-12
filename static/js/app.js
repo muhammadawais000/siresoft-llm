@@ -9,6 +9,22 @@ function getCookie(name) {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
+// The server answers any /api/ call with 401 once this account is signed
+// out or inactive (e.g. an admin set its hours to 0). Rather than each
+// caller showing its own error ("Could not start a new chat"), every
+// fetch goes to the sign-in page, where the reason is shown.
+const nativeFetch = window.fetch.bind(window);
+window.fetch = async (...args) => {
+  const resp = await nativeFetch(...args);
+  if (resp.status === 401) {
+    window.location.href = '/login/';
+    // Never settles: the page is navigating away, and callers must not
+    // go on to show an error toast in the meantime.
+    return new Promise(() => {});
+  }
+  return resp;
+};
+
 document.addEventListener('alpine:init', () => {
   Alpine.data('app', () => ({
     // ---------------------------------------------------------------
@@ -63,15 +79,15 @@ document.addEventListener('alpine:init', () => {
     // Asks the server every few seconds whether this account is still
     // active, so an admin turning it off (or cutting its hours to 0)
     // logs the user out right away instead of on their next click.
+    // (A 401 here is redirected by the fetch wrapper at the top of this
+    // file.) Browsers slow timers down in background tabs, so it also
+    // checks the moment the tab is shown again.
     watchAccountStatus() {
-      setInterval(async () => {
-        try {
-          const resp = await fetch('/api/auth/status/');
-          if (resp.status === 401) window.location.href = '/login/';
-        } catch (err) {
-          // Network blip: try again on the next tick.
-        }
-      }, 10000);
+      const check = () => fetch('/api/auth/status/').catch(() => {});
+      setInterval(check, 10000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') check();
+      });
     },
 
     // ---------------------------------------------------------------
