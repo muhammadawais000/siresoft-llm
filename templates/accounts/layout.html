@@ -1,8 +1,12 @@
 {% extends "base.html" %}
 {% load static %}
+{% comment %}
+  Siresoft's branding for the accounts app's sign-in / sign-up pages
+  (overrides accounts/templates/accounts/layout.html). The acc-* classes
+  used by the app's forms are styled in static_src/input.css.
+{% endcomment %}
+{% block title %}{{ accounts.heading }}{% endblock %}
 {% block content %}
-<!-- Shared by the sign-in and sign-up pages so both stay identical:
-     only the card's contents differ (the auth_card block). -->
 <div class="flex h-full w-full flex-col">
   <header
     class="relative flex h-[40%] shrink-0 flex-col items-center justify-center overflow-hidden bg-center px-4"
@@ -14,9 +18,7 @@
   >
     <!-- Navy overlay keeps the logo/heading readable regardless of the
          photo's own colors; if the photo file is missing/renamed, the
-         gradient + dot-pattern layers behind it show through instead
-         (browsers fall back to the next background-image layer when one
-         fails to load), so this header is never left blank. -->
+         gradient + dot-pattern layers behind it show through instead. -->
     <div class="absolute inset-0 bg-blue-950/25"></div>
 
     <div class="relative flex flex-col items-center">
@@ -27,28 +29,15 @@
           <p class="mt-0.5 text-[10px] font-semibold tracking-wide text-white sm:text-xs">Leader in Innovation</p>
         </div>
       </div>
-      <h1 class="mt-6 text-center text-2xl font-semibold text-white sm:text-4xl">{% block auth_heading %}{% endblock %}</h1>
+      <h1 class="mt-6 text-center text-2xl font-semibold text-white sm:text-4xl">{{ accounts.heading }}</h1>
     </div>
   </header>
 
   <div class="flex flex-1 items-center justify-center overflow-y-auto px-4 py-8">
     <div class="login-card w-full max-w-[26rem] p-8">
-      <p class="mb-6 text-center text-sm text-text-muted">{% block auth_subtitle %}{% endblock %}</p>
-
-      {% for message in messages %}
-      <div class="mb-4 rounded-md px-3 py-2 text-sm {% if message.level_tag == 'error' %}bg-red-50 text-red-700{% else %}bg-green-50 text-green-800{% endif %}">
-        {{ message }}
-      </div>
-      {% endfor %}
-
-      {% if form.non_field_errors %}
-      <div class="mb-4 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
-        {{ form.non_field_errors.0 }}
-      </div>
-      {% endif %}
-
-      {% block auth_card %}{% endblock %}
-
+      <p class="mb-6 text-center text-sm text-text-muted">{{ accounts.subtitle }}</p>
+      {% include "accounts/includes/messages.html" %}
+      {% block accounts_content %}{% endblock %}
       <p class="mt-6 text-center text-xs text-text-subtle">&copy; 2026 Siresoft &ndash; All rights reserved. A LoneGroup Company.</p>
     </div>
   </div>

@@ -46,7 +46,7 @@ class ChatSessionViewSet(
 
     def get_queryset(self):
         # Each user only ever sees their own chats -- and owning them is
-        # what lets core.access.expire_user() delete exactly that user's
+        # what lets chat.signals.delete_chat_history delete exactly that user's
         # history when a time-limited account expires.
         return ChatSession.objects.filter(user=self.request.user)
 

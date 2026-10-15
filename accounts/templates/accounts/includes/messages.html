@@ -1,0 +1,6 @@
+{% for message in messages %}
+<div class="acc-alert {% if message.level_tag == 'error' %}acc-alert-error{% else %}acc-alert-success{% endif %}">{{ message }}</div>
+{% endfor %}
+{% if form.non_field_errors %}
+<div class="acc-alert acc-alert-error">{{ form.non_field_errors.0 }}</div>
+{% endif %}

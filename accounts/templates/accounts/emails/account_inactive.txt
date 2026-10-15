@@ -1,0 +1,7 @@
+Hello,
+
+Someone just tried to sign in to {{ site_name }} with this email address, but the account is inactive.
+
+To use it again, contact {{ admin_email }} and ask for your account to be re-activated.
+
+{{ site_name }}

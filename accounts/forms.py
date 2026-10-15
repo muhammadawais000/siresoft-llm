@@ -1,31 +1,36 @@
 from django import forms
+from django.contrib.auth import get_user_model
 from django.contrib.auth.forms import AuthenticationForm
-from django.contrib.auth.models import User
 from django.contrib.auth.password_validation import validate_password
 
-from core.access import access_expired, expire_user, get_access, send_inactive_notice, send_verification_email
+from accounts.conf import message
+from accounts.services import (
+    access_expired_for,
+    expire_user,
+    get_access,
+    send_inactive_notice,
+    send_verification_email,
+)
+
+User = get_user_model()
+
+# Widgets carry the app's own CSS classes (styled by
+# static/accounts/css/accounts.css, or by the project's own stylesheet
+# when it overrides accounts/layout.html).
+_INPUT = {"class": "acc-input"}
 
 
 class EmailAuthenticationForm(AuthenticationForm):
-    """AuthenticationForm relabeled for email login.
-
-    The field is still named `username` (Django's AuthenticationForm.clean()
-    passes it to authenticate() as the `username` kwarg regardless of
-    label) -- only the label, widget, and validation look like an email
-    field. core.auth_backends.EmailBackend is what actually treats the
-    value as an email address.
-    """
+    """AuthenticationForm relabeled for email sign-in (see backends.EmailBackend)."""
 
     username = forms.EmailField(
         label="Email",
-        widget=forms.EmailInput(
-            attrs={"class": "login-input", "autofocus": True, "placeholder": "you@company.com"}
-        ),
+        widget=forms.EmailInput(attrs={**_INPUT, "autofocus": True, "placeholder": "you@company.com"}),
     )
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.fields["password"].widget.attrs.update({"class": "login-input", "placeholder": "••••••••"})
+        self.fields["password"].widget.attrs.update({**_INPUT, "placeholder": "••••••••"})
 
     def clean(self):
         # The stock clean() can't tell an inactive account from a wrong
@@ -38,7 +43,7 @@ class EmailAuthenticationForm(AuthenticationForm):
         if email and password:
             user = User.objects.filter(email__iexact=email).order_by("pk").first()
             if user is not None and user.check_password(password):
-                if user.is_active and access_expired(user):
+                if user.is_active and access_expired_for(user):
                     expire_user(user)
                 if not user.is_active:
                     self._raise_for_inactive(user)
@@ -51,40 +56,30 @@ class EmailAuthenticationForm(AuthenticationForm):
                 send_verification_email(self.request, user)
             except Exception:
                 pass
-            raise forms.ValidationError(
-                "Please verify your email first. Check your inbox for the link we sent you.",
-                code="unverified",
-            )
+            raise forms.ValidationError(message("unverified_login"), code="unverified")
         send_inactive_notice(user)
-        raise forms.ValidationError(
-            "Your account is inactive. We've emailed you how to get it re-activated.",
-            code="inactive",
-        )
+        raise forms.ValidationError(message("inactive_login"), code="inactive")
 
     def get_invalid_login_error(self):
         # Same message for "no such account" and "wrong password" -- don't
-        # reveal which part of the credential pair was wrong. Inactive
-        # accounts with the right password are handled in clean() above.
-        return forms.ValidationError(
-            "Invalid email or password.",
-            code="invalid_login",
-        )
+        # reveal which part of the pair was wrong.
+        return forms.ValidationError(message("invalid_login"), code="invalid_login")
 
 
 class SignupForm(forms.Form):
     email = forms.EmailField(
         label="Email",
-        widget=forms.EmailInput(attrs={"class": "login-input", "autofocus": True, "placeholder": "you@company.com"}),
+        widget=forms.EmailInput(attrs={**_INPUT, "autofocus": True, "placeholder": "you@company.com"}),
     )
     password1 = forms.CharField(
         label="Password",
         strip=False,
-        widget=forms.PasswordInput(attrs={"class": "login-input", "placeholder": "••••••••", "autocomplete": "new-password"}),
+        widget=forms.PasswordInput(attrs={**_INPUT, "placeholder": "••••••••", "autocomplete": "new-password"}),
     )
     password2 = forms.CharField(
         label="Confirm password",
         strip=False,
-        widget=forms.PasswordInput(attrs={"class": "login-input", "placeholder": "••••••••", "autocomplete": "new-password"}),
+        widget=forms.PasswordInput(attrs={**_INPUT, "placeholder": "••••••••", "autocomplete": "new-password"}),
     )
 
     def clean_email(self):
@@ -95,7 +90,7 @@ class SignupForm(forms.Form):
             # An account that never verified its email can sign up again
             # (new password, fresh link); any other account already exists.
             if access is None or access.email_verified:
-                raise forms.ValidationError("An account with this email already exists. Sign in instead.")
+                raise forms.ValidationError(message("email_exists"))
         self.existing_unverified = existing
         return email
 
@@ -103,7 +98,7 @@ class SignupForm(forms.Form):
         cleaned = super().clean()
         p1, p2 = cleaned.get("password1"), cleaned.get("password2")
         if p1 and p2 and p1 != p2:
-            self.add_error("password2", "The two passwords don't match.")
+            self.add_error("password2", message("password_mismatch"))
         elif p1 and cleaned.get("email"):
             try:
                 validate_password(p1, User(username=cleaned["email"], email=cleaned["email"]))

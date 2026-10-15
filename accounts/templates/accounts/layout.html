@@ -1,0 +1,23 @@
+{% load static %}<!doctype html>
+{% comment %}
+  Default page shell for the sign-in and sign-up pages. To brand them,
+  create templates/accounts/layout.html in the project (same blocks):
+  keep {% block accounts_content %} and include
+  "accounts/includes/messages.html" inside your card.
+{% endcomment %}
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{{ accounts.heading }}{% endblock %}</title>
+  <link rel="stylesheet" href="{% static 'accounts/css/accounts.css' %}">
+</head>
+<body class="acc-page">
+  <main class="acc-card">
+    <h1 class="acc-heading">{{ accounts.heading }}</h1>
+    <p class="acc-subtitle">{{ accounts.subtitle }}</p>
+    {% include "accounts/includes/messages.html" %}
+    {% block accounts_content %}{% endblock %}
+  </main>
+</body>
+</html>

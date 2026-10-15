@@ -1,0 +1,6 @@
+<div class="acc-field">
+  <label for="{{ field.id_for_label }}" class="acc-label">{{ field.label }}</label>
+  {{ field }}
+  {% for error in field.errors %}<p class="acc-field-error">{{ error }}</p>{% endfor %}
+  {% if forgot_password_url %}<a href="{{ forgot_password_url }}" class="acc-forgot">Forgot your password?</a>{% endif %}
+</div>

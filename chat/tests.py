@@ -10,7 +10,7 @@ import uuid
 from unittest.mock import patch
 
 from django.conf import settings
-from django.test import SimpleTestCase, TestCase
+from django.test import Client, SimpleTestCase, TestCase
 
 from chat.models import ChatMessage, ChatSession, MessageCitation
 from chat.services import NO_CONTEXT_MESSAGE, _is_summary_request, stream_chat_turn
@@ -429,3 +429,57 @@ class SummaryRequestIntegrationTests(TestCase):
 
         done_event = next(e for e in events if e["event"] == "done")
         self.assertEqual(len(done_event["data"]["citations"]), 2)
+
+
+def make_account(email, password="s3cret-pass"):
+    from django.contrib.auth.models import User
+
+    return User.objects.create_user(username=email, email=email, password=password)
+
+
+class ChatSessionOwnershipTests(TestCase):
+    def setUp(self):
+        self.client = Client()
+        self.alice = make_account(email="alice@example.com")
+        self.bob = make_account(email="bob@example.com")
+        self.bob_session = ChatSession.objects.create(user=self.bob, title="bob's chat")
+        self.client.login(username="alice@example.com", password="s3cret-pass")
+
+    def test_new_chat_is_saved_against_the_signed_in_user(self):
+        resp = self.client.post("/api/chat/sessions/", {}, content_type="application/json")
+        self.assertEqual(resp.status_code, 201)
+        self.assertEqual(ChatSession.objects.get(pk=resp.json()["id"]).user, self.alice)
+
+    def test_users_only_see_their_own_chats(self):
+        ChatSession.objects.create(user=self.alice, title="alice's chat")
+        titles = [s["title"] for s in self.client.get("/api/chat/sessions/").json()]
+        self.assertEqual(titles, ["alice's chat"])
+        self.assertEqual(self.client.get(f"/api/chat/sessions/{self.bob_session.pk}/").status_code, 404)
+
+    def test_cannot_post_into_someone_elses_chat(self):
+        resp = self.client.post(
+            f"/api/chat/sessions/{self.bob_session.pk}/messages/",
+            {"question": "hi", "model": "llama3.1:8b"},
+            content_type="application/json",
+        )
+        self.assertEqual(resp.status_code, 404)
+
+
+class ChatHistoryDeletedOnExpiryTests(TestCase):
+    """chat.signals.delete_chat_history, connected to the accounts app's
+    access_expired signal in ChatConfig.ready()."""
+
+    def test_expiring_a_user_deletes_only_their_chats(self):
+        from accounts.services import expire_user
+
+        alice = make_account("alice@example.com")
+        bob = make_account("bob@example.com")
+        session = ChatSession.objects.create(user=alice)
+        ChatMessage.objects.create(session=session, role=ChatMessage.Role.USER, content="hello")
+        ChatSession.objects.create(user=bob)
+
+        expire_user(alice)
+
+        self.assertFalse(ChatSession.objects.filter(user=alice).exists())
+        self.assertFalse(ChatMessage.objects.exists())
+        self.assertTrue(ChatSession.objects.filter(user=bob).exists())

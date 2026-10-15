@@ -45,6 +45,7 @@ INSTALLED_APPS = [
     "corsheaders",
     "django_celery_results",
     # local apps
+    "accounts",
     "core",
     "documents",
     "rag",
@@ -61,29 +62,39 @@ MIDDLEWARE = [
     "django.contrib.messages.middleware.MessageMiddleware",
     # Needs request.user and request._messages (it flashes a message when
     # an access period expires), so must come after both middlewares above.
-    "core.middleware.RequireActiveLoginMiddleware",
+    "accounts.middleware.LoginRequiredMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
 
-# Accounts come from self-signup (core.views.SignupView, time-limited --
-# see SIGNUP_ACCESS_HOURS) or from an admin (Django admin's "Add user" form,
-# no time limit). EmailBackend lets the login page collect an email
-# instead of a username; ModelBackend stays as a fallback so Django
-# admin's own (username-based) login form keeps working unchanged.
+# Sign-in, sign-up and time-limited access come from the reusable
+# `accounts` app (see accounts/README.md). Accounts come from self-signup
+# (time-limited) or from an admin (Django admin's "Add user", no limit).
+# EmailBackend signs in by email; ModelBackend stays as a fallback so the
+# Django admin's own (username-based) login form keeps working.
 AUTHENTICATION_BACKENDS = [
-    "core.auth_backends.EmailBackend",
+    "accounts.backends.EmailBackend",
     "django.contrib.auth.backends.ModelBackend",
 ]
 
-LOGIN_URL = "/login/"
+LOGIN_URL = "accounts:login"
 LOGIN_REDIRECT_URL = "/"
-LOGOUT_REDIRECT_URL = "/login/"
+LOGOUT_REDIRECT_URL = "accounts:login"
 
-# Hours a self-signup account stays active after its email is verified.
-# Changeable per user afterwards on the user's admin page ("Access").
-SIGNUP_ACCESS_HOURS = env.int("SIGNUP_ACCESS_HOURS", default=24)
-# Shown in the "your account is inactive" email and message.
-ADMIN_CONTACT_EMAIL = env("ADMIN_CONTACT_EMAIL", default="admin@siresoft.com")
+ACCOUNTS = {
+    "SITE_NAME": "Siresoft LLM",
+    # Hours a self-signup account stays active after its email is
+    # verified. Changeable per user afterwards on the user's admin page.
+    "SIGNUP_ACCESS_HOURS": env.int("SIGNUP_ACCESS_HOURS", default=24),
+    "ADMIN_CONTACT_EMAIL": env("ADMIN_CONTACT_EMAIL", default="admin@siresoft.com"),
+    # Decorative for now -- no password-reset flow exists yet.
+    "FORGOT_PASSWORD_URL": "#",
+    "MESSAGES": {
+        "login_heading": "Login {site_name}",
+        "login_subtitle": "Sign in to your workspace",
+        "signup_heading": "Sign up {site_name}",
+        "signup_subtitle": "Create your workspace account",
+    },
+}
 
 # --------------------------------------------------------------------------
 # Email -- signup verification links and "account inactive" notices.
@@ -223,9 +234,9 @@ CELERY_TASK_TRACK_STARTED = True
 # Run by the beat scheduler embedded in the worker container (`-B`, see
 # docker-compose.yml). Every 5 minutes is close enough: a user whose time
 # runs out in between is also caught on their next request by
-# RequireActiveLoginMiddleware.
+# accounts.middleware.LoginRequiredMiddleware.
 CELERY_BEAT_SCHEDULE = {
-    "expire-user-access": {"task": "core.tasks.expire_user_access", "schedule": 300.0},
+    "expire-user-access": {"task": "accounts.tasks.expire_user_access", "schedule": 300.0},
 }
 # A single ingestion task can legitimately run for minutes on a large PDF;
 # time limits are generous but not infinite, so a stuck worker can't wedge

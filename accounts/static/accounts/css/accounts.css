@@ -1,0 +1,48 @@
+/* Default look for the accounts pages. Change the colors through the
+   variables below, or override accounts/layout.html in the project and
+   style the acc-* classes with its own stylesheet instead. */
+:root {
+  --acc-primary: #1d4ed8;
+  --acc-primary-hover: #1e40af;
+  --acc-bg: #f1f5f9;
+  --acc-card: #ffffff;
+  --acc-text: #0f172a;
+  --acc-muted: #64748b;
+  --acc-border: #cbd5e1;
+  --acc-error: #b91c1c;
+  --acc-error-bg: #fef2f2;
+  --acc-success: #166534;
+  --acc-success-bg: #f0fdf4;
+}
+* { box-sizing: border-box; }
+.acc-page {
+  margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  padding: 16px; background: var(--acc-bg); color: var(--acc-text);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+.acc-card {
+  width: 100%; max-width: 26rem; padding: 32px; background: var(--acc-card);
+  border: 1px solid var(--acc-border); border-radius: 10px; box-shadow: 0 10px 25px rgb(15 23 42 / 8%);
+}
+.acc-heading { margin: 0 0 4px; font-size: 1.5rem; text-align: center; }
+.acc-subtitle { margin: 0 0 24px; font-size: 0.875rem; text-align: center; color: var(--acc-muted); }
+.acc-alert { margin-bottom: 16px; padding: 8px 12px; border-radius: 6px; font-size: 0.875rem; }
+.acc-alert-error { background: var(--acc-error-bg); color: var(--acc-error); }
+.acc-alert-success { background: var(--acc-success-bg); color: var(--acc-success); }
+.acc-form { display: flex; flex-direction: column; gap: 20px; }
+.acc-label { display: block; margin-bottom: 6px; font-size: 0.875rem; font-weight: 700; }
+.acc-input {
+  width: 100%; padding: 10px 12px; font-size: 0.875rem; color: var(--acc-text);
+  border: 1px solid var(--acc-border); border-radius: 6px; background: transparent;
+}
+.acc-input:focus { outline: none; border-color: var(--acc-primary); box-shadow: 0 0 0 1px var(--acc-primary); }
+.acc-field-error { margin: 4px 0 0; font-size: 0.75rem; color: var(--acc-error); }
+.acc-forgot { display: inline-block; margin-top: 6px; font-size: 0.75rem; color: var(--acc-muted); }
+.acc-btn {
+  width: 100%; padding: 10px; font-size: 0.875rem; font-weight: 600; color: #fff;
+  background: var(--acc-primary); border: 0; border-radius: 6px; cursor: pointer;
+}
+.acc-btn:hover { background: var(--acc-primary-hover); }
+.acc-switch { margin: 20px 0 0; font-size: 0.875rem; text-align: center; color: var(--acc-muted); }
+.acc-link { font-weight: 600; color: var(--acc-primary); text-decoration: none; }
+.acc-link:hover { text-decoration: underline; }

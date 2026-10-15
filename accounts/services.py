@@ -1,11 +1,11 @@
-"""Account lifecycle for self-signup users: verification email, the
-time-limited access period, and what happens when it runs out.
+"""Account lifecycle: verification email, the time-limited access period,
+and what happens when it runs out.
 
-Expiry is enforced in two places that both call expire_user(): the
-core.tasks.expire_user_access periodic task (so chat history is deleted
-on time even if the user never comes back), and RequireActiveLoginMiddleware
-plus the login form (so a user is never let in during the gap between
-expiry and the task's next run).
+Expiry is enforced in several places that all call expire_user(): the
+expire_user_access task / `manage.py expire_accounts` (so it happens on
+time even if the user never comes back), LoginRequiredMiddleware and the
+sign-in form (so a user is never let in between expiry and the next run),
+and the admin (when hours are cut to 0).
 """
 
 import logging
@@ -21,12 +21,11 @@ from django.utils import timezone
 from django.utils.encoding import force_bytes
 from django.utils.http import urlsafe_base64_encode
 
-from chat.models import ChatSession
-from core.models import UserAccess
+from accounts.conf import accounts_settings, message
+from accounts.models import UserAccess
+from accounts.signals import access_expired
 
 logger = logging.getLogger(__name__)
-
-NOTICE_THROTTLE = timedelta(minutes=5)
 
 
 def get_access(user):
@@ -36,7 +35,7 @@ def get_access(user):
         return None
 
 
-def access_expired(user) -> bool:
+def access_expired_for(user) -> bool:
     if user.is_superuser:
         return False
     access = get_access(user)
@@ -45,11 +44,17 @@ def access_expired(user) -> bool:
 
 @transaction.atomic
 def expire_user(user):
-    """Deactivate an account whose access period ran out and delete its chat history."""
+    """Deactivate an account whose access period ran out, then let the
+    project clean up its data through the access_expired signal."""
     user.is_active = False
     user.save(update_fields=["is_active"])
-    deleted, _ = ChatSession.objects.filter(user=user).delete()
-    logger.info("access expired: user=%s deactivated, %d chat rows deleted", user.pk, deleted)
+    logger.info("access expired: user=%s deactivated", user.pk)
+    access_expired.send(sender=user.__class__, user=user)
+
+
+def start_access_period(access, now=None):
+    access.access_starts_at = now or timezone.now()
+    access.last_notice_sent_at = None
 
 
 def remaining_text(access, now=None) -> str:
@@ -62,11 +67,6 @@ def remaining_text(access, now=None) -> str:
     if minutes or not hours:
         parts.append(f"{minutes} minute{'s' if minutes != 1 else ''}")
     return " ".join(parts)
-
-
-def start_access_period(access, now=None):
-    access.access_starts_at = now or timezone.now()
-    access.last_notice_sent_at = None
 
 
 def restart_access(user):
@@ -87,7 +87,8 @@ def apply_admin_access_change(user, *, reactivated: bool, hours_changed: bool):
     - Ticking "Active", or giving an inactive user hours (e.g. 0 -> 24),
       re-activates them with their hours counting from now.
     - Cutting an active user's hours so their time is already up (e.g. to
-      0) expires them now; app.js's status check logs them out in seconds.
+      0) expires them now; the session guard script logs them out within
+      STATUS_POLL_SECONDS.
     """
     access = UserAccess.objects.filter(user=user, access_hours__isnull=False).first()
     if access is None:
@@ -95,12 +96,36 @@ def apply_admin_access_change(user, *, reactivated: bool, hours_changed: bool):
     if reactivated or (hours_changed and not user.is_active and access.access_hours > 0):
         restart_access(user)
         access.refresh_from_db()
-    if user.is_active and access.is_expired():
+    if user.is_active and not user.is_superuser and access.is_expired():
         expire_user(user)
 
 
+def expire_due_users(now=None) -> int:
+    """Expire every active user whose time is up. Returns how many."""
+    from django.contrib.auth import get_user_model
+
+    now = now or timezone.now()
+    candidates = (
+        get_user_model()
+        .objects.filter(
+            is_active=True,
+            is_superuser=False,
+            access__access_hours__isnull=False,
+            access__access_starts_at__isnull=False,
+        )
+        .select_related("access")
+    )
+    expired = 0
+    for user in candidates:
+        if user.access.is_expired(now):
+            expire_user(user)
+            expired += 1
+    return expired
+
+
 def _notice_allowed(access) -> bool:
-    return access.last_notice_sent_at is None or timezone.now() - access.last_notice_sent_at >= NOTICE_THROTTLE
+    throttle = timedelta(minutes=accounts_settings.NOTICE_THROTTLE_MINUTES)
+    return access.last_notice_sent_at is None or timezone.now() - access.last_notice_sent_at >= throttle
 
 
 def _mark_notice_sent(access):
@@ -108,24 +133,33 @@ def _mark_notice_sent(access):
     access.save(update_fields=["last_notice_sent_at"])
 
 
+def _email_context(**extra):
+    return {
+        "site_name": accounts_settings.SITE_NAME,
+        "admin_email": accounts_settings.admin_email,
+        **extra,
+    }
+
+
 def send_verification_email(request, user, *, force=False) -> bool:
     """Email the "your account was created, click below" link.
 
-    Returns False without sending when one went out in the last few
-    minutes (unless `force`). Raises if the mail server rejects it.
+    Returns False without sending when one went out within
+    NOTICE_THROTTLE_MINUTES (unless `force`). Raises if the mail server
+    rejects it.
     """
     access = get_access(user)
     if not force and not _notice_allowed(access):
         return False
     uid = urlsafe_base64_encode(force_bytes(user.pk))
     token = default_token_generator.make_token(user)
-    context = {
-        "activation_url": request.build_absolute_uri(reverse("activate", args=[uid, token])),
-        "access_hours": access.access_hours,
-    }
+    context = _email_context(
+        activation_url=request.build_absolute_uri(reverse("accounts:activate", args=[uid, token])),
+        access_hours=access.access_hours,
+    )
     send_mail(
-        subject="Your Siresoft LLM account has been created",
-        message=render_to_string("emails/account_created.txt", context),
+        subject=message("created_email_subject"),
+        message=render_to_string("accounts/emails/account_created.txt", context),
         from_email=settings.DEFAULT_FROM_EMAIL,
         recipient_list=[user.email],
     )
@@ -135,17 +169,16 @@ def send_verification_email(request, user, *, force=False) -> bool:
 
 def send_inactive_notice(user) -> bool:
     """Email "your account is inactive, contact the admin". Throttled the
-    same way as the verification email; failures are logged, not raised,
-    since the login page shows the same message either way.
+    same way; failures are logged, not raised, since the sign-in page
+    shows the same message either way.
     """
     access, _ = UserAccess.objects.get_or_create(user=user)
     if not _notice_allowed(access):
         return False
-    context = {"admin_email": settings.ADMIN_CONTACT_EMAIL}
     try:
         send_mail(
-            subject="Your Siresoft LLM account is inactive",
-            message=render_to_string("emails/account_inactive.txt", context),
+            subject=message("inactive_email_subject"),
+            message=render_to_string("accounts/emails/account_inactive.txt", _email_context()),
             from_email=settings.DEFAULT_FROM_EMAIL,
             recipient_list=[user.email],
         )

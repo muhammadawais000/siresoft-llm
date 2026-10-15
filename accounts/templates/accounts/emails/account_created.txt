@@ -1,0 +1,11 @@
+Hello,
+
+Your {{ site_name }} account has been created. Click the link below to verify your email address and sign in:
+
+{{ activation_url }}
+{% if access_hours is not None %}
+Once verified, your account stays active for {{ access_hours }} hours.
+{% endif %}
+If you didn't sign up, you can ignore this email.
+
+{{ site_name }}

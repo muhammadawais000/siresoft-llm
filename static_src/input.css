@@ -146,25 +146,52 @@
     text-decoration: underline;
   }
 
-  /* Login page is a fixed brand screen, not a themed one -- every color
-     here is hardcoded rather than pulled from the app's light/dark
-     surface variables, unlike everywhere else in the SPA. */
-  .login-input {
+  /* The accounts app's sign-in / sign-up pages (see templates/accounts/
+     layout.html). They're a fixed brand screen, not a themed one -- every
+     color here is hardcoded rather than pulled from the app's light/dark
+     surface variables, unlike everywhere else in the SPA. The acc-* class
+     names come from the accounts app's own templates. */
+  .login-card {
+    @apply rounded-lg border border-border bg-white shadow-lg;
+  }
+  .acc-form {
+    @apply flex flex-col gap-5;
+  }
+  .acc-label {
+    @apply mb-1.5 block text-sm font-bold text-black;
+  }
+  .acc-input {
     @apply w-full rounded-md border border-black bg-transparent px-3 py-2.5 text-sm font-bold text-black
            placeholder:text-text-subtle placeholder:font-normal focus:outline-none focus:border-accent
            focus:ring-1 focus:ring-accent/30 transition-colors;
   }
-
-  .login-card {
-    @apply rounded-lg border border-border bg-white shadow-lg;
+  .acc-field-error {
+    @apply mt-1 text-xs text-red-600;
   }
-
-  .login-btn {
-    @apply inline-flex items-center justify-center rounded-md px-12 py-2.5 text-sm font-semibold
+  .acc-forgot {
+    @apply mt-1.5 inline-block text-xs text-text-muted hover:text-accent hover:underline;
+  }
+  .acc-btn {
+    @apply inline-flex w-full items-center justify-center rounded-md px-12 py-2.5 text-sm font-semibold
            text-white transition-colors;
     background-color: #03175d;
   }
-  .login-btn:hover {
+  .acc-btn:hover {
     background-color: #020f45;
+  }
+  .acc-switch {
+    @apply mt-5 text-center text-sm text-text-muted;
+  }
+  .acc-link {
+    @apply font-semibold text-accent hover:underline;
+  }
+  .acc-alert {
+    @apply mb-4 rounded-md px-3 py-2 text-sm;
+  }
+  .acc-alert-error {
+    @apply bg-red-50 text-red-700;
+  }
+  .acc-alert-success {
+    @apply bg-green-50 text-green-800;
   }
 }

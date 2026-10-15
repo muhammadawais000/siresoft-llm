@@ -9,21 +9,9 @@ function getCookie(name) {
   return match ? decodeURIComponent(match[2]) : null;
 }
 
-// The server answers any /api/ call with 401 once this account is signed
-// out or inactive (e.g. an admin set its hours to 0). Rather than each
-// caller showing its own error ("Could not start a new chat"), every
-// fetch goes to the sign-in page, where the reason is shown.
-const nativeFetch = window.fetch.bind(window);
-window.fetch = async (...args) => {
-  const resp = await nativeFetch(...args);
-  if (resp.status === 401) {
-    window.location.href = '/login/';
-    // Never settles: the page is navigating away, and callers must not
-    // go on to show an error toast in the meantime.
-    return new Promise(() => {});
-  }
-  return resp;
-};
+// Signing out on a 401 and polling the account status are handled by
+// the accounts app's session guard script, loaded before this file (see
+// {% accounts_session_guard %} in templates/index.html).
 
 document.addEventListener('alpine:init', () => {
   Alpine.data('app', () => ({
@@ -66,7 +54,6 @@ document.addEventListener('alpine:init', () => {
     // ---------------------------------------------------------------
     async init() {
       this.showInitialMessages();
-      this.watchAccountStatus();
       await Promise.all([this.loadDocuments(), this.loadModels(), this.loadSessions()]);
     },
 
@@ -74,20 +61,6 @@ document.addEventListener('alpine:init', () => {
       const el = document.getElementById('initial-messages');
       if (!el) return;
       JSON.parse(el.textContent).forEach((m) => this.toast(m.text, m.type, 10000));
-    },
-
-    // Asks the server every few seconds whether this account is still
-    // active, so an admin turning it off (or cutting its hours to 0)
-    // logs the user out right away instead of on their next click.
-    // (A 401 here is redirected by the fetch wrapper at the top of this
-    // file.) Browsers slow timers down in background tabs, so it also
-    // checks the moment the tab is shown again.
-    watchAccountStatus() {
-      const check = () => fetch('/api/auth/status/').catch(() => {});
-      setInterval(check, 10000);
-      document.addEventListener('visibilitychange', () => {
-        if (document.visibilityState === 'visible') check();
-      });
     },
 
     // ---------------------------------------------------------------
